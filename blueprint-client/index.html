@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blueprint Client 1.21.11</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="launcher-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-mark">B</div>
+          <div>
+            <h1>Blueprint Client</h1>
+            <p>Vanilla launcher</p>
+          </div>
+        </div>
+
+        <div class="profile-card">
+          <p>Profile</p>
+          <strong>Explorer</strong>
+          <span>Offline • No mods</span>
+        </div>
+
+        <nav class="nav-links">
+          <button class="nav-btn active">Play</button>
+          <button class="nav-btn">Installations</button>
+          <button class="nav-btn">Settings</button>
+          <button class="nav-btn">News</button>
+        </nav>
+      </aside>
+
+      <main class="main-panel">
+        <header class="banner">
+          <div>
+            <p class="eyebrow">Minecraft</p>
+            <h2>Blueprint Client 1.21.11</h2>
+            <p class="subtext">A polished, clean launcher built for smooth vanilla play.</p>
+          </div>
+          <div class="status-pill">Online</div>
+        </header>
+
+        <section class="hero-card">
+          <div>
+            <p class="eyebrow">Latest release</p>
+            <h3>Launch Minecraft 1.21.11</h3>
+            <p>Stable, lightweight, and ready for a calm build-and-explore session.</p>
+          </div>
+          <button id="playBtn" class="play-btn">Launch Game</button>
+        </section>
+
+        <section class="info-grid">
+          <article class="info-card">
+            <p class="eyebrow">Version</p>
+            <strong>1.21.11</strong>
+            <span>Release-ready</span>
+          </article>
+          <article class="info-card">
+            <p class="eyebrow">Mode</p>
+            <strong>Vanilla</strong>
+            <span>No mods required</span>
+          </article>
+          <article class="info-card">
+            <p class="eyebrow">Status</p>
+            <strong id="statusText">Ready</strong>
+            <span id="statusDetail">Clean startup</span>
+          </article>
+        </section>
+
+        <section class="bottom-panel">
+          <div class="console-card">
+            <div class="console-head">
+              <span>Launch log</span>
+              <span id="progressLabel">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <p id="consoleOutput">Waiting for launch...</p>
+          </div>
+
+          <div class="version-card">
+            <p class="eyebrow">Installed profile</p>
+            <strong>Blueprint Survival</strong>
+            <span>Singleplayer · Friendly world</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="loadingScreen" class="loading-screen" aria-hidden="true">
+      <div class="loading-inner">
+        <h1 class="loading-wordmark">
+          <span class="word-blue">BLUEPRINT</span>
+          <span class="word-light">CLIENT</span>
+        </h1>
+        <p class="loading-version">MINECRAFT 1.21.11</p>
+
+        <div class="loading-meta">
+          <span id="loadingStatus">Preparing your session...</span>
+          <span id="loadingPercent">0%</span>
+        </div>
+        <div class="loading-track">
+          <div id="loadingFill" class="loading-fill"></div>
+        </div>
+        <p class="loading-footer">Getting things ready</p>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
