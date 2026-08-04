@@ -1,16 +1,17 @@
 import json
 import os
+import queue
 import shutil
 import subprocess
-import sys
+import threading
 import tkinter as tk
-import webbrowser
+from collections import deque
 from tkinter import ttk
-from urllib.parse import quote
 
+import modrinth_launcher
 from loading_screen import LoadingScreen
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "blueprint_instance.json")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blueprint_instance.json")
 
 
 class BlueprintLauncherApp:
@@ -35,8 +36,13 @@ class BlueprintLauncherApp:
         style.map("Nav.TButton", background=[("active", "#132c38")])
         style.configure("TProgressbar", background="#59f2a2", troughcolor="#122433", thickness=10)
 
+        self.game_process = None
+        self.events = queue.Queue()
+
         self.build_ui()
         self.loading = LoadingScreen(self.root)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(80, self._pump_events)
 
     def build_ui(self):
         main = ttk.Frame(self.root, padding=20)
@@ -74,8 +80,12 @@ class BlueprintLauncherApp:
         hero.grid(row=1, column=0, sticky="ew", pady=(0, 16))
         hero.grid_columnconfigure(0, weight=1)
         ttk.Label(hero, text="Latest release", foreground="#8fb0bf").grid(row=0, column=0, sticky="w")
-        ttk.Label(hero, text="Launch through Modrinth", font=("Segoe UI", 14, "bold")).grid(row=1, column=0, sticky="w", pady=(4, 4))
-        ttk.Label(hero, text="Using Modrinth as the launcher path for a clean Minecraft experience.", foreground="#8fb0bf").grid(row=2, column=0, sticky="w")
+        ttk.Label(hero, text="Launch Minecraft directly", font=("Segoe UI", 14, "bold")).grid(row=1, column=0, sticky="w", pady=(4, 4))
+        ttk.Label(
+            hero,
+            text="Starts the game straight from your Modrinth files. The Modrinth app never opens.",
+            foreground="#8fb0bf",
+        ).grid(row=2, column=0, sticky="w")
         self.play_button = ttk.Button(hero, text="Launch Game", style="Accent.TButton", command=self.launch_game)
         self.play_button.grid(row=0, column=1, rowspan=3, sticky="e")
 
@@ -114,12 +124,91 @@ class BlueprintLauncherApp:
         ttk.Label(card, text=main, font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(4, 0))
         ttk.Label(card, text=sub, foreground="#8fb0bf").pack(anchor="w")
 
-    def launch_game(self):
-        self.play_button.configure(state="disabled", text="Launching...")
-        self.loading.show("Looking for Minecraft...")
-        self._set_stage("Looking for Minecraft...", 5, "Launching")
+    # ------------------------------------------------------------- launching
 
-        self.root.after(300, self._try_launch_real_minecraft)
+    def launch_game(self):
+        if self.game_process and self.game_process.poll() is None:
+            self._set_stage("Minecraft is already running.", 100, "Running")
+            return
+
+        self.play_button.configure(state="disabled", text="Launching...")
+        self.loading.show("Reading your Modrinth game files...")
+        self._set_stage("Reading your Modrinth game files...", 4, "Launching")
+
+        worker = threading.Thread(target=self._launch_worker, daemon=True)
+        worker.start()
+
+    def _launch_worker(self):
+        """Build the java command and start the game off the UI thread."""
+        config = self._load_config()
+        try:
+            process, plan = modrinth_launcher.launch_minecraft(
+                config,
+                progress=lambda percent, message: self._post("stage", percent, message),
+            )
+        except modrinth_launcher.LaunchError as exc:
+            self._post("failed", str(exc))
+            return
+        except Exception as exc:  # unexpected, but the UI still needs to recover
+            self._post("failed", f"Unexpected launch error: {exc}")
+            return
+
+        self._post("started", process, plan)
+        self._watch_game(process)
+
+    def _watch_game(self, process):
+        """Keep the tail of the game log so a crash can explain itself."""
+        tail = deque(maxlen=40)
+        if process.stdout:
+            for line in process.stdout:
+                tail.append(line.rstrip())
+        code = process.wait()
+        self._post("exited", code, list(tail))
+
+    def _post(self, kind, *payload):
+        self.events.put((kind, payload))
+
+    def _pump_events(self):
+        """Deliver worker-thread events on the Tk thread."""
+        try:
+            while True:
+                kind, payload = self.events.get_nowait()
+                handler = getattr(self, f"_on_{kind}")
+                handler(*payload)
+        except queue.Empty:
+            pass
+        finally:
+            self.root.after(80, self._pump_events)
+
+    def _on_stage(self, percent, message):
+        self._set_stage(message, percent, "Launching")
+
+    def _on_started(self, process, plan):
+        self.game_process = process
+        note = plan.warnings[0] if plan.warnings else f"Playing as {plan.account['username']}"
+        self._set_stage(f"Minecraft {plan.version_id} is starting. {note}", 100, "Running")
+        self.play_button.configure(state="disabled", text="Game running")
+        self.loading.hide_after(1600)
+
+    def _on_exited(self, code, tail):
+        self.game_process = None
+        self.play_button.configure(state="normal", text="Launch Game")
+
+        if code == 0:
+            self._set_stage("Minecraft closed.", 0, "Ready")
+            return
+
+        reason = next((line for line in reversed(tail) if line.strip()), "")
+        message = f"Minecraft exited with code {code}."
+        if reason:
+            message += f" {reason[:180]}"
+        self._set_stage(message, 0, "Error", error=True)
+        self.loading.hide_after(3500)
+
+    def _on_failed(self, message):
+        self._set_stage(message, 20, "Error", button_text="Try Again", error=True)
+        self.loading.hide_after(4500)
+        self._maybe_open_modrinth_app()
 
     def _set_stage(self, message, percent, state, button_text=None, error=False):
         """Update the launcher panel and the loading screen from one place."""
@@ -136,147 +225,49 @@ class BlueprintLauncherApp:
         else:
             self.loading.set_progress(percent, message)
 
-    def _try_launch_real_minecraft(self):
+    # ---------------------------------------------------------- last resort
+
+    def _maybe_open_modrinth_app(self):
+        """Opt-in fallback: only opens Modrinth if the config asks for it."""
         config = self._load_config()
-        instance_name = config.get("instance_name", "Blueprint")
-        modrinth_exe = config.get("modrinth_executable", "")
+        if not config.get("fallback_to_modrinth_app"):
+            return
 
-        exe_path = self._find_modrinth_executable(modrinth_exe)
-        if exe_path:
-            self._set_stage("Found Modrinth. Preparing your profile...", 35, "Launching")
-            try:
-                instance_id = self._resolve_instance_id(instance_name)
-                if instance_id:
-                    self._launch_modrinth_instance(exe_path, instance_name, instance_id)
-                    return
+        exe_path = self._find_modrinth_executable(config.get("modrinth_executable", ""))
+        if not exe_path:
+            return
 
-                subprocess.Popen([exe_path], shell=False)
-                self._set_stage(
-                    f"Opened Modrinth. Please start the '{instance_name}' profile manually.",
-                    100,
-                    "Ready",
-                    button_text="Open Again",
-                )
-                self.loading.hide_after(2500)
-                return
-            except Exception as exc:
-                self._set_stage(
-                    f"Could not open Modrinth: {exc}",
-                    25,
-                    "Error",
-                    button_text="Try Again",
-                    error=True,
-                )
-                self.loading.hide_after(3500)
-                return
-
-        self._set_stage(
-            "Modrinth app was not found on this system.",
-            25,
-            "Not found",
-            button_text="Try Again",
-            error=True,
-        )
-        self.loading.hide_after(3500)
+        try:
+            subprocess.Popen(
+                [exe_path],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            pass
 
     def _find_modrinth_executable(self, configured_path=""):
-        candidates = []
         if configured_path and os.path.exists(configured_path):
             return configured_path
-        if configured_path:
-            candidates.append(configured_path)
 
-        candidates.extend([
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Modrinth App\Modrinth App.exe"),
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\modrinth-app\modrinth-app.exe"),
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\Modrinth App\modrinth-app.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Modrinth\modrinth-app.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\Modrinth.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\modrinth-app.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\ModrinthApp.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\modrinthapp.exe"),
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\Modrinth.exe"),
             os.path.expandvars(r"%ProgramFiles%\Modrinth App\modrinth-app.exe"),
-            os.path.expandvars(r"%ProgramFiles(x86)%\Modrinth App\modrinth-app.exe"),
-            os.path.expandvars(r"%ProgramFiles%\Modrinth\modrinth-app.exe"),
-            os.path.expandvars(r"%ProgramFiles(x86)%\Modrinth\modrinth-app.exe"),
-            os.path.expandvars(r"%USERPROFILE%\AppData\Local\Programs\Modrinth App\modrinth-app.exe"),
-            os.path.expandvars(r"%USERPROFILE%\AppData\Local\Programs\modrinth-app\modrinth-app.exe"),
-            os.path.expandvars(r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\Modrinth.exe"),
-            os.path.expandvars(r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps\modrinth-app.exe"),
-        ])
-
+        ]
         for path in candidates:
             if os.path.exists(path):
                 return path
 
-        for alias in ["modrinth-app", "modrinth", "Modrinth", "ModrinthApp", "modrinthapp"]:
+        for alias in ["modrinth-app", "Modrinth App", "modrinth"]:
             found = shutil.which(alias)
             if found:
                 return found
         return None
 
-    def _find_instance_path(self, instance_name):
-        candidates = []
-        if instance_name:
-            candidates.extend([
-                os.path.expandvars(rf"%APPDATA%\modrinth\instances\{instance_name}"),
-                os.path.expandvars(rf"%LOCALAPPDATA%\modrinth\instances\{instance_name}"),
-                os.path.expandvars(rf"%LOCALAPPDATA%\Programs\Modrinth App\instances\{instance_name}"),
-                os.path.expandvars(rf"%LOCALAPPDATA%\Programs\modrinth-app\instances\{instance_name}"),
-                os.path.expandvars(rf"%LOCALAPPDATA%\Programs\Modrinth\instances\{instance_name}"),
-                os.path.expandvars(rf"%USERPROFILE%\AppData\Roaming\modrinth\instances\{instance_name}"),
-            ])
-
-        for path in candidates:
-            if os.path.isdir(path):
-                return path
-        return ""
-
-    def _launch_modrinth_instance(self, exe_path, instance_name, instance_id):
-        self._set_stage(f"Opening Modrinth and selecting '{instance_name}'...", 70, "Launching")
-
-        try:
-            subprocess.Popen([exe_path], shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-        def send_launch_request():
-            encoded_id = quote(instance_id, safe=':')
-            launch_uri = f"modrinth://launch/instance/{encoded_id}"
-            try:
-                subprocess.Popen([exe_path, launch_uri], shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self._set_stage(
-                    f"Opened Modrinth and requested '{instance_name}'.",
-                    100,
-                    "Launched",
-                    button_text="Open Again",
-                )
-                self.loading.hide_after(2500)
-            except Exception as exc:
-                self._set_stage(
-                    f"Could not request the Modrinth profile: {exc}",
-                    25,
-                    "Error",
-                    button_text="Try Again",
-                    error=True,
-                )
-                self.loading.hide_after(3500)
-
-        self.root.after(2500, lambda: self._set_stage("Waiting for Modrinth to wake up...", 88, "Launching"))
-        self.root.after(5000, send_launch_request)
-
-    def _resolve_instance_id(self, instance_name):
-        if not instance_name:
-            return None
-
-        cleaned = instance_name.strip()
-        if cleaned == "Fabric 26.2":
-            return "legacy:Fabric 26.2"
-
-        if cleaned.startswith("legacy:"):
-            return cleaned
-
-        return None
+    # --------------------------------------------------------------- config
 
     def _load_config(self):
         if not os.path.exists(CONFIG_PATH):
@@ -284,8 +275,12 @@ class BlueprintLauncherApp:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
                 return json.load(fh)
-        except Exception:
+        except (OSError, ValueError):
             return {}
+
+    def _on_close(self):
+        # The game keeps running on its own; only stop watching it.
+        self.root.destroy()
 
 
 def main():
