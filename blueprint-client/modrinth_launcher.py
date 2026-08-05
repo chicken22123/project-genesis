@@ -152,8 +152,10 @@ def _open_database(db_path):
     if not os.path.isfile(db_path):
         return None
 
+    # check_same_thread is off because the UI reads this database from worker
+    # threads; every query here is read-only and callers hold their own lock.
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
         return conn
@@ -168,7 +170,7 @@ def _open_database(db_path):
             source = db_path + suffix
             if os.path.isfile(source):
                 shutil.copyfile(source, copy_path + suffix)
-        conn = sqlite3.connect(copy_path)
+        conn = sqlite3.connect(copy_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
     except (OSError, sqlite3.Error):
@@ -225,21 +227,61 @@ class ModrinthInstall:
 
     # ------------------------------------------------------------- instances
 
+    def _content_sets(self):
+        """Version and loader per instance, keyed by content set id and instance id.
+
+        Newer Modrinth builds moved these columns out of the instance row and
+        into ``instance_content_sets``; without this join every instance looks
+        like unknown/vanilla.
+        """
+        by_set = {}
+        by_instance = {}
+
+        for row in self._rows("instance_content_sets"):
+            details = {
+                "game_version": _pick(row, "game_version", "mc_version", "minecraft_version"),
+                "loader": (_pick(row, "loader", "mod_loader", "modloader") or "").lower(),
+                "loader_version": _pick(row, "loader_version", "mod_loader_version"),
+            }
+            set_id = _pick(row, "id")
+            if set_id:
+                by_set[set_id] = details
+
+            instance_id = _pick(row, "instance_id")
+            # An instance can own several sets; the applied one is matched by id
+            # above, so only the default is worth remembering as a fallback.
+            if instance_id and (instance_id not in by_instance or _pick(row, "name") == "Default"):
+                by_instance[instance_id] = details
+
+        return by_set, by_instance
+
     def instances(self):
         """Every instance Modrinth knows about, newest first."""
         table = self._first_table("instances", "profiles")
         rows = self._rows(table)
+        by_set, by_instance = self._content_sets()
 
         found = []
         for row in rows:
             path = _pick(row, "path", "install_path", "profile_path") or ""
+            details = (
+                by_set.get(_pick(row, "applied_content_set_id") or "")
+                or by_instance.get(_pick(row, "id") or "")
+                or {}
+            )
             found.append(
                 {
                     "name": _pick(row, "name", "title") or os.path.basename(path),
                     "path": self._resolve_profile_path(path),
-                    "game_version": _pick(row, "game_version", "mc_version", "minecraft_version"),
-                    "loader": (_pick(row, "mod_loader", "loader", "modloader") or "").lower(),
-                    "loader_version": _pick(row, "mod_loader_version", "loader_version"),
+                    "game_version": _pick(row, "game_version", "mc_version", "minecraft_version")
+                    or details.get("game_version"),
+                    "loader": (
+                        _pick(row, "mod_loader", "loader", "modloader")
+                        or details.get("loader")
+                        or ""
+                    ).lower(),
+                    "loader_version": _pick(row, "mod_loader_version", "loader_version")
+                    or details.get("loader_version"),
                     "java_path": _pick(row, "java_path", "override_java_path"),
                     "memory_max": _pick_int(row, "override_memory_max", "memory_max", "max_memory"),
                     "extra_args": _pick(row, "override_extra_launch_args", "extra_launch_args"),
@@ -257,7 +299,7 @@ class ModrinthInstall:
                 if os.path.isdir(path):
                     found.append({"name": name, "path": path, "last_played": ""})
 
-        found.sort(key=lambda item: str(item.get("last_played") or ""), reverse=True)
+        found.sort(key=lambda item: _last_played_key(item.get("last_played")), reverse=True)
         return found
 
     def _resolve_profile_path(self, path):
@@ -354,6 +396,16 @@ class ModrinthInstall:
         return installs
 
 
+def _last_played_key(value):
+    """Sort key for last_played: a unix timestamp now, ISO text in older builds."""
+    if value in (None, ""):
+        return (0, 0.0, "")
+    try:
+        return (2, float(value), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, str(value))
+
+
 def _pick(row, *keys):
     for key in keys:
         value = row.get(key)
@@ -414,6 +466,11 @@ def _all_version_manifests(versions_dir):
     return manifests
 
 
+def available_version_ids(install):
+    """Every version id with a manifest on disk, most recently written first."""
+    return [version_id for version_id, _path, _mtime in _all_version_manifests(install.versions_dir)]
+
+
 def _score_manifest(version_id, manifest, game_version, loader):
     """How well a manifest on disk matches the instance we want to launch."""
     lowered = version_id.lower()
@@ -454,6 +511,8 @@ def resolve_version_id(install, instance):
         exact_ids.append(f"{loader}-loader-{loader_version}-{game_version}")
         exact_ids.append(f"{game_version}-{loader}-{loader_version}")
         exact_ids.append(f"{game_version}-{loader}{loader_version}")
+        # How the current Modrinth build names them, e.g. "1.21.11-0.19.3".
+        exact_ids.append(f"{game_version}-{loader_version}")
     elif game_version:
         exact_ids.append(game_version)
 
@@ -596,9 +655,22 @@ def _library_files(library, libraries_dir):
 
 
 def _library_key(path):
-    """Group libraries by artifact so duplicate versions collapse."""
+    """Group libraries by artifact *and classifier* so only duplicate versions
+    collapse. Dropping the classifier too would make a natives-only jar and its
+    sibling classes jar (e.g. lwjgl's ``natives-windows`` and ``unsafe``
+    variants) look like the same artifact and silently drop one of them.
+    """
     parts = os.path.normpath(path).split(os.sep)
-    return os.sep.join(parts[:-2]).lower() if len(parts) >= 3 else path.lower()
+    if len(parts) < 3:
+        return path.lower()
+
+    version = parts[-2]
+    stem = os.path.splitext(parts[-1])[0]
+    idx = stem.find(version)
+    classifier = stem[idx + len(version):].lstrip("-") if idx != -1 else stem
+
+    group_artifact = os.sep.join(parts[:-2]).lower()
+    return f"{group_artifact}::{classifier.lower()}"
 
 
 def build_classpath(install, manifest):
@@ -782,6 +854,13 @@ def _split_args(value):
         return []
     if isinstance(value, list):
         return [str(item) for item in value]
+    if isinstance(value, bytes):
+        # Modrinth stores some settings columns in a binary encoding we don't
+        # parse; str(bytes) would otherwise turn it into a garbage CLI arg.
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            return []
     text = str(value).strip()
     if text.startswith("["):
         try:
