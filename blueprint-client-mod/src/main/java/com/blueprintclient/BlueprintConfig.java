@@ -50,6 +50,14 @@ public final class BlueprintConfig {
 				// yet this early in start up.
 				module.setEnabledSilently(Boolean.parseBoolean(value));
 			}
+
+			if (module.isHudElement()) {
+				Float x = readFloat(properties, "hud." + key(module.getName()) + ".x");
+				Float y = readFloat(properties, "hud." + key(module.getName()) + ".y");
+				if (x != null && y != null) {
+					module.setHudPosition(x, y);
+				}
+			}
 		}
 
 		for (Category category : Category.values()) {
@@ -71,6 +79,12 @@ public final class BlueprintConfig {
 
 		for (Module module : Modules.all()) {
 			properties.setProperty("module." + key(module.getName()), Boolean.toString(module.isEnabled()));
+			if (module.isHudElement()) {
+				properties.setProperty(
+						"hud." + key(module.getName()) + ".x", String.format(java.util.Locale.ROOT, "%.4f", module.getHudX()));
+				properties.setProperty(
+						"hud." + key(module.getName()) + ".y", String.format(java.util.Locale.ROOT, "%.4f", module.getHudY()));
+			}
 		}
 
 		for (Category category : Category.values()) {
@@ -94,6 +108,18 @@ public final class BlueprintConfig {
 
 	private static String key(String moduleName) {
 		return moduleName.replace(' ', '_').toLowerCase(java.util.Locale.ROOT);
+	}
+
+	private static Float readFloat(Properties properties, String name) {
+		String value = properties.getProperty(name);
+		if (value == null) {
+			return null;
+		}
+		try {
+			return Float.valueOf(value.trim());
+		} catch (NumberFormatException exception) {
+			return null;
+		}
 	}
 
 	private static Integer readInt(Properties properties, String name) {

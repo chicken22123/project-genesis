@@ -19,8 +19,6 @@ import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public class BlueprintClientMod implements ClientModInitializer {
-	private static final int HUD_COLOR = 0xFF8ECBFF;
-
 	private static KeyBinding menuKey;
 
 	@Override
@@ -62,21 +60,16 @@ public class BlueprintClientMod implements ClientModInitializer {
 			return;
 		}
 
-		int y = 6;
-		for (Module module : Modules.all()) {
-			if (!module.isEnabled()) {
-				continue;
-			}
-			String line = module.hudLine(client);
-			if (line != null) {
-				context.drawTextWithShadow(client.textRenderer, line, 6, y, HUD_COLOR);
-				y += 10;
-			}
-		}
+		int width = client.getWindow().getScaledWidth();
+		int height = client.getWindow().getScaledHeight();
 
-		for (Module module : Modules.all()) {
+		for (Module module : Modules.hudElements()) {
 			if (module.isEnabled()) {
-				module.renderHud(context, client);
+				// Each element carries its own spot, set in the HUD editor.
+				module.renderHudAt(
+						context, client,
+						Math.round(module.getHudX() * width),
+						Math.round(module.getHudY() * height));
 			}
 		}
 	}
