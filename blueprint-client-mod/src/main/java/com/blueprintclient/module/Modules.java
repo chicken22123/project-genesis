@@ -69,7 +69,32 @@ public final class Modules {
 	public static final Module HIDE_HUD = register(new HideHud());
 	public static final Module COPY_COORDS = register(new CopyCoords());
 
+	static {
+		// Text readouts stack down the top left corner; the keystrokes block
+		// starts low on the left, out of the way of the hotbar. Anything can be
+		// moved from here in the HUD editor.
+		float y = 0.010f;
+		for (Module module : ALL) {
+			if (module.isHudElement() && module != KEYSTROKES) {
+				module.setDefaultHudPosition(0.006f, y);
+				y += 0.024f;
+			}
+		}
+		KEYSTROKES.setDefaultHudPosition(0.006f, 0.74f);
+	}
+
 	private Modules() {
+	}
+
+	/** Every module that draws on the HUD, in the order they were registered. */
+	public static List<Module> hudElements() {
+		List<Module> found = new ArrayList<>();
+		for (Module module : ALL) {
+			if (module.isHudElement()) {
+				found.add(module);
+			}
+		}
+		return found;
 	}
 
 	private static <T extends Module> T register(T module) {
@@ -622,10 +647,18 @@ public final class Modules {
 		}
 
 		@Override
-		public void renderHud(DrawContext context, MinecraftClient client) {
-			int block = KEY_SIZE * 3 + GAP * 2;
-			int x = 6;
-			int y = client.getWindow().getScaledHeight() - (KEY_SIZE * 4 + GAP * 3) - 6;
+		public int hudWidth(MinecraftClient client) {
+			return KEY_SIZE * 3 + GAP * 2;
+		}
+
+		@Override
+		public int hudHeight(MinecraftClient client) {
+			return KEY_SIZE * 4 + GAP * 3;
+		}
+
+		@Override
+		public void renderHudAt(DrawContext context, MinecraftClient client, int x, int y) {
+			int block = hudWidth(client);
 
 			drawKey(context, client, x + KEY_SIZE + GAP, y, KEY_SIZE, "W",
 					client.options.forwardKey.isPressed());

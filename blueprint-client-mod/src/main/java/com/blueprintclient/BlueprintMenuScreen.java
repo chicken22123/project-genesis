@@ -43,6 +43,7 @@ public class BlueprintMenuScreen extends Screen {
 	private static final int FIELD_HEIGHT = 16;
 	private static final int SEARCH_WIDTH = 180;
 	private static final int COLLAPSE_ZONE = 16;
+	private static final String EDIT_LABEL = "EDIT HUD";
 
 	private String search = "";
 	private boolean binding;
@@ -103,6 +104,13 @@ public class BlueprintMenuScreen extends Screen {
 		field(context, bindX, BAR_Y, bindWidth, this.binding || inside(mouseX, mouseY, bindX, BAR_Y, bindWidth, FIELD_HEIGHT));
 		context.drawTextWithShadow(
 				this.textRenderer, bindLabel(), bindX + 8, BAR_Y + 4, this.binding ? ACCENT_LIGHT : TEXT);
+
+		int editWidth = editWidth();
+		int editX = editX();
+		boolean editHovered = inside(mouseX, mouseY, editX, BAR_Y, editWidth, FIELD_HEIGHT);
+		field(context, editX, BAR_Y, editWidth, editHovered);
+		context.drawTextWithShadow(
+				this.textRenderer, EDIT_LABEL, editX + 8, BAR_Y + 4, editHovered ? ACCENT_LIGHT : TEXT);
 	}
 
 	/** Draws one panel and returns the module under the pointer, if any. */
@@ -206,6 +214,14 @@ public class BlueprintMenuScreen extends Screen {
 		return this.width - 10 - bindWidth;
 	}
 
+	private int editWidth() {
+		return this.textRenderer.getWidth(EDIT_LABEL) + 16;
+	}
+
+	private int editX() {
+		return bindX(bindWidth()) - editWidth() - 8;
+	}
+
 	private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {
 		return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
 	}
@@ -232,6 +248,12 @@ public class BlueprintMenuScreen extends Screen {
 		int bindWidth = bindWidth();
 		if (inside(mouseX, mouseY, bindX(bindWidth), BAR_Y, bindWidth, FIELD_HEIGHT)) {
 			this.binding = true;
+			return true;
+		}
+
+		if (inside(mouseX, mouseY, editX(), BAR_Y, editWidth(), FIELD_HEIGHT)) {
+			BlueprintConfig.save();
+			this.client.setScreen(new HudEditorScreen(this));
 			return true;
 		}
 
