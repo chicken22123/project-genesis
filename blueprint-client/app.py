@@ -29,6 +29,7 @@ from page_settings import SettingsPage
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "blueprint_instance.json")
 LOG_PATH = os.path.join(HERE, "launch.log")
+ICON_PATH = os.path.join(HERE, "blueprint_icon.ico")
 
 APP_VERSION = "1.1.0"
 
@@ -122,6 +123,14 @@ class BlueprintApp:
         self.root.minsize(900, 600)
         self.root.configure(bg=theme.BG_TOP)
         theme.apply_ttk_theme(root)
+
+        # The same mark the desktop shortcut uses, so the window and the taskbar
+        # match instead of showing Tk's default feather.
+        if os.path.isfile(ICON_PATH):
+            try:
+                self.root.iconbitmap(default=ICON_PATH)
+            except tk.TclError:
+                pass
 
         self.log_path = LOG_PATH
         self.config_store = ConfigStore(CONFIG_PATH)
