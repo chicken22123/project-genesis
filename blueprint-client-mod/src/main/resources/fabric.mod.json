@@ -3,7 +3,7 @@
   "id": "blueprintclient",
   "version": "${version}",
   "name": "Blueprint Client",
-  "description": "Shows a Blueprint Client welcome screen when you join a world.",
+  "description": "Blueprint Client: an in-game module menu with draggable panels, search and a rebindable key, plus HUD and comfort modules.",
   "authors": [],
   "contact": {},
   "license": "MIT",

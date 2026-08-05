@@ -1,5 +1,8 @@
 package com.blueprintclient;
 
+import com.blueprintclient.module.Module;
+import com.blueprintclient.module.Modules;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -7,15 +10,18 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.particle.ParticleTypes;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
+
 import org.lwjgl.glfw.GLFW;
 
 public class BlueprintClientMod implements ClientModInitializer {
+	private static final int HUD_COLOR = 0xFF8ECBFF;
+
 	private static KeyBinding menuKey;
-	private int confettiCooldown;
 
 	@Override
 	public void onInitializeClient() {
@@ -24,6 +30,8 @@ public class BlueprintClientMod implements ClientModInitializer {
 				GLFW.GLFW_KEY_RIGHT_SHIFT,
 				KeyBinding.Category.create(Identifier.of("blueprintclient", "general"))
 		));
+
+		BlueprintConfig.load();
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
 				client.execute(() -> client.setScreen(new BlueprintWelcomeScreen(client.currentScreen))));
@@ -40,41 +48,64 @@ public class BlueprintClientMod implements ClientModInitializer {
 
 	private void onTick(MinecraftClient client) {
 		while (menuKey.wasPressed()) {
-			if (client.currentScreen instanceof BlueprintMenuScreen) {
-				client.setScreen(null);
-			} else if (client.currentScreen == null) {
+			if (client.currentScreen == null) {
 				client.setScreen(new BlueprintMenuScreen());
 			}
 		}
 
-		if (BlueprintFeatures.confetti && client.player != null && client.world != null) {
-			confettiCooldown--;
-			if (confettiCooldown <= 0) {
-				confettiCooldown = 4;
-				var random = client.player.getRandom();
-				double x = client.player.getX() + (random.nextDouble() - 0.5) * 2;
-				double y = client.player.getY() + 1.5 + random.nextDouble();
-				double z = client.player.getZ() + (random.nextDouble() - 0.5) * 2;
-				client.particleManager.addParticle(ParticleTypes.TOTEM_OF_UNDYING, x, y, z, 0, 0.05, 0);
-			}
-		}
+		Modules.tick(client);
 	}
 
-	private void renderHud(net.minecraft.client.gui.DrawContext context) {
+	private void renderHud(DrawContext context) {
 		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.player == null) {
+		if (client.player == null || client.options == null || client.options.hudHidden) {
 			return;
 		}
 
 		int y = 6;
-		if (BlueprintFeatures.fpsHud) {
-			context.drawTextWithShadow(client.textRenderer, "FPS: " + client.getCurrentFps(), 6, y, 0xFF8ECBFF);
-			y += 10;
+		for (Module module : Modules.all()) {
+			if (!module.isEnabled()) {
+				continue;
+			}
+			String line = module.hudLine(client);
+			if (line != null) {
+				context.drawTextWithShadow(client.textRenderer, line, 6, y, HUD_COLOR);
+				y += 10;
+			}
 		}
-		if (BlueprintFeatures.coordinatesHud) {
-			String coords = String.format(
-					"XYZ: %.1f / %.1f / %.1f", client.player.getX(), client.player.getY(), client.player.getZ());
-			context.drawTextWithShadow(client.textRenderer, coords, 6, y, 0xFF8ECBFF);
+
+		for (Module module : Modules.all()) {
+			if (module.isEnabled()) {
+				module.renderHud(context, client);
+			}
+		}
+	}
+
+	// ------------------------------------------------------------- menu key
+
+	/** The GLFW code the menu is bound to right now. */
+	public static int menuKeyCode() {
+		return InputUtil.fromTranslationKey(menuKey.getBoundKeyTranslationKey()).getCode();
+	}
+
+	public static String menuKeyName() {
+		return menuKey.getBoundKeyLocalizedText().getString();
+	}
+
+	/**
+	 * Rebind the menu, from the button in the click GUI.
+	 *
+	 * <p>This goes through the real key binding rather than a setting of our
+	 * own, so Minecraft saves it in options.txt and the vanilla Controls screen
+	 * shows the same key.
+	 */
+	public static void setMenuKey(int keyCode) {
+		menuKey.setBoundKey(InputUtil.Type.KEYSYM.createFromCode(keyCode));
+		KeyBinding.updateKeysByCode();
+
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.options != null) {
+			client.options.write();
 		}
 	}
 }
