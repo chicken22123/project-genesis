@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+blueprint-client/launch.log*
+
+# blueprint-client-mod (Gradle/Fabric Loom)
+blueprint-client-mod/build/
+blueprint-client-mod/.gradle/
+blueprint-client-mod/run/
+*.class

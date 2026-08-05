@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "blueprintclient",
+  "version": "${version}",
+  "name": "Blueprint Client",
+  "description": "Blueprint Client: an in-game module menu with draggable panels, search and a rebindable key, plus HUD and comfort modules.",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.blueprintclient.BlueprintClientMod"
+    ]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

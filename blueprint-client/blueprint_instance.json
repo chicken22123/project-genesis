@@ -1,11 +1,14 @@
 {
-  "instance_name": "Fabric 26.2",
-  "instance_path": "C:\\Users\\strai\\AppData\\Roaming\\ModrinthApp\\profiles\\Fabric 26.2",
+  "instance_name": "1.21.1",
+  "instance_path": "C:\\Users\\strai\\AppData\\Roaming\\ModrinthApp\\profiles\\1.21.1",
+  "version_id": "1.21.11-0.19.3",
   "modrinth_data_dir": "",
   "java_executable": "",
   "memory_max_mb": 0,
   "extra_java_args": [],
   "offline_username": "Player",
+  "width": 0,
+  "height": 0,
   "fallback_to_modrinth_app": false,
   "modrinth_executable": "C:\\Users\\strai\\AppData\\Local\\Modrinth App\\Modrinth App.exe"
 }
