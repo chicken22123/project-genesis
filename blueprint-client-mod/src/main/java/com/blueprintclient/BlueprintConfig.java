@@ -1,5 +1,6 @@
 package com.blueprintclient;
 
+import com.blueprintclient.flip.FlipSettings;
 import com.blueprintclient.module.Category;
 import com.blueprintclient.module.Module;
 import com.blueprintclient.module.Modules;
@@ -43,6 +44,8 @@ public final class BlueprintConfig {
 			return;
 		}
 
+		FlipSettings.get().load(properties);
+
 		for (Module module : Modules.all()) {
 			String value = properties.getProperty("module." + key(module.getName()));
 			if (value != null) {
@@ -76,6 +79,7 @@ public final class BlueprintConfig {
 
 	public static void save() {
 		Properties properties = new Properties();
+		FlipSettings.get().save(properties);
 
 		for (Module module : Modules.all()) {
 			properties.setProperty("module." + key(module.getName()), Boolean.toString(module.isEnabled()));

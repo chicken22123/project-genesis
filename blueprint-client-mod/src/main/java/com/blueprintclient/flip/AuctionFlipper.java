@@ -1,0 +1,805 @@
+package com.blueprintclient.flip;
+
+import com.blueprintclient.module.Category;
+import com.blueprintclient.module.Module;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.text.Text;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Random;
+import java.util.Set;
+
+/**
+ * Watches the auction house, works out what is underpriced, buys it and lists
+ * it again.
+ *
+ * <p>The loop is: open the browser, read the page, feed every price into
+ * {@link MarketModel}, and score each listing against what the model says the
+ * item is worth. If nothing clears the thresholds the page is reloaded through
+ * the anvil and read again. If something does, it is bought, and the item is
+ * relisted just under the cheapest competing copy.
+ *
+ * <p>Two things are worth knowing before switching it on. It buys nothing for
+ * the first minute or so: the model needs several sightings of an item before
+ * it will price it, and until then every listing fails the sample test. And it
+ * only ever clicks two kinds of slot - a listing it has priced, or a button
+ * whose name is in {@link FlipSettings} - so a GUI it does not understand
+ * leaves it turning over doing nothing rather than clicking blindly.
+ *
+ * <p>This automates play on whatever server you point it at. Most servers,
+ * Hypixel included, treat auction house macros as a bannable offence, so the
+ * risk is real and it is yours.
+ */
+public final class AuctionFlipper extends Module {
+	/** Where the machine is in the loop. */
+	public enum Stage {
+		OFF,
+		OPENING,
+		BROWSING,
+		BUYING,
+		LISTING,
+		LISTED,
+		STOPPED
+	}
+
+	private static final long OPEN_TIMEOUT_MS = 5_000L;
+	private static final long BUY_TIMEOUT_MS = 7_000L;
+	private static final long LIST_TIMEOUT_MS = 8_000L;
+	private static final int MAX_ERRORS = 5;
+	private static final int REPORT_LINES = 3;
+
+	/** What the scoring decided about one listing. */
+	public record Candidate(
+			int slotId,
+			String key,
+			String display,
+			long price,
+			long sale,
+			long profit,
+			double margin,
+			double confidence,
+			double score) {
+	}
+
+	private static AuctionFlipper active;
+
+	private final MarketModel market = new MarketModel();
+	private final FlipSettings settings = FlipSettings.get();
+	private final Random random = new Random();
+	private final Deque<Long> refreshTimes = new ArrayDeque<>();
+	private final Set<Integer> clickedSlots = new HashSet<>();
+	private final List<String> report = new ArrayList<>();
+
+	private Stage stage = Stage.OFF;
+	private long stageStart;
+	private long nextActionAt;
+	private int clickedSyncId = -1;
+	private int errors;
+	private boolean commandSent;
+	private long lastPageSignature;
+
+	private Candidate pending;
+	private int pendingCountBefore;
+	private String status = "off";
+
+	// Running totals for the HUD.
+	private long spent;
+	private long expectedProfit;
+	private int flips;
+	private int scans;
+	private int refreshes;
+
+	// Set from the chat listener, read on the next tick.
+	private volatile boolean boughtSignal;
+	private volatile boolean buyFailedSignal;
+	private volatile boolean listedSignal;
+
+	private boolean dryRun;
+
+	public AuctionFlipper() {
+		super("Auction Flipper", Category.ECONOMY, "Prices the auction house, buys the bargains and relists them.");
+		active = this;
+	}
+
+	public static AuctionFlipper active() {
+		return active;
+	}
+
+	public void setDryRun(boolean value) {
+		dryRun = value;
+	}
+
+	// ------------------------------------------------------------- lifecycle
+
+	@Override
+	protected void onEnable(MinecraftClient client) {
+		market.loadIfNeeded();
+		spent = 0;
+		expectedProfit = 0;
+		flips = 0;
+		scans = 0;
+		refreshes = 0;
+		errors = 0;
+		pending = null;
+		report.clear();
+		refreshTimes.clear();
+		enter(Stage.OPENING, System.currentTimeMillis());
+		nextActionAt = System.currentTimeMillis() + 500L;
+		status = "starting";
+		tell(client, "Flipper on - budget " + AuctionParser.coins(settings.sessionBudget)
+				+ ", up to " + AuctionParser.coins(settings.maxSpendPerItem) + " an item"
+				+ (dryRun ? " (dry run: nothing will be bought)" : ""));
+	}
+
+	@Override
+	protected void onDisable(MinecraftClient client) {
+		market.save();
+		boolean stopped = stage == Stage.STOPPED;
+		stage = Stage.OFF;
+		pending = null;
+		// A stop explains itself; a plain toggle has nothing to say.
+		if (!stopped) {
+			status = "off";
+		}
+	}
+
+	@Override
+	public void tick(MinecraftClient client) {
+		if (client.player == null || client.getNetworkHandler() == null || client.interactionManager == null) {
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		market.maybeSave(now);
+
+		// A screen of our own, or any other menu, means the player is doing
+		// something else. Wait it out instead of counting it as a timeout.
+		if (client.currentScreen != null && !(client.currentScreen instanceof HandledScreen<?>)) {
+			stageStart = now;
+			nextActionAt = now + 300L;
+			return;
+		}
+
+		if (now < nextActionAt) {
+			return;
+		}
+
+		switch (stage) {
+			case OFF -> enter(Stage.OPENING, now);
+			case OPENING -> opening(client, now);
+			case BROWSING -> browsing(client, now);
+			case BUYING -> buying(client, now);
+			case LISTING -> listing(client, now);
+			case LISTED -> listed(client, now);
+			case STOPPED -> {
+				// Waiting for the player to switch the module off and on again.
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------- stages
+
+	private void opening(MinecraftClient client, long now) {
+		if (isBrowser(client)) {
+			enter(Stage.BROWSING, now);
+			return;
+		}
+
+		if (container(client) != null) {
+			// Some other GUI is in the way; step out of it first.
+			client.player.closeHandledScreen();
+			delay(now, 300);
+			return;
+		}
+
+		if (!commandSent) {
+			send(client, settings.browseCommand);
+			commandSent = true;
+			status = "opening the auction house";
+			delay(now, 700);
+			return;
+		}
+
+		// The command went out and nothing opened. Give the server a moment,
+		// then try again, and give up rather than sit here typing forever.
+		if (now - stageStart > OPEN_TIMEOUT_MS) {
+			if (++errors > MAX_ERRORS) {
+				stop(client, "the auction house did not open - check flip.browseCommand");
+				return;
+			}
+			stageStart = now;
+			commandSent = false;
+		}
+		delay(now, 400);
+	}
+
+	private void browsing(MinecraftClient client, long now) {
+		ScreenHandler handler = container(client);
+		if (handler == null || !isBrowser(client)) {
+			enter(Stage.OPENING, now);
+			return;
+		}
+
+		// Getting this far means the browser opened and is readable, so
+		// whatever went wrong earlier in the session is behind us.
+		errors = 0;
+
+		AuctionScan scan = AuctionScan.of(handler, settings);
+		// Reading the same page twice - the reload was rate limited, or the
+		// server sent the same listings back - would count as two independent
+		// sightings and let one page pull the median towards itself.
+		long signature = scan.signature();
+		if (scan.listingCount() > 0 && signature != lastPageSignature) {
+			lastPageSignature = signature;
+			market.noteScan();
+			for (AuctionScan.Listing listing : scan.listings()) {
+				market.observe(listing.key(), listing.price(), now);
+			}
+			scans++;
+		}
+
+		Candidate best = evaluate(scan, now);
+		if (best != null && !dryRun && affordable(best)) {
+			pending = best;
+			pendingCountBefore = inventoryCount(client, best.key());
+			clickedSlots.clear();
+			click(client, handler, best.slotId());
+			status = "buying " + best.display() + " for " + AuctionParser.coins(best.price());
+			tell(client, String.format(
+					Locale.ROOT,
+					"Buying %s at %s - worth about %s, margin %.0f%% (confidence %.0f%%)",
+					best.display(),
+					AuctionParser.coins(best.price()),
+					AuctionParser.coins(best.sale()),
+					best.margin() * 100.0,
+					best.confidence() * 100.0));
+			enter(Stage.BUYING, now);
+			delay(now, settings.actionDelayMs);
+			return;
+		}
+
+		if (best != null && dryRun) {
+			status = String.format(
+					Locale.ROOT, "would buy %s (+%s)", best.display(), AuctionParser.coins(best.profit()));
+		} else {
+			status = "watching - " + market.describe();
+		}
+
+		refresh(client, handler, scan, now);
+	}
+
+	/** Reload the page through the anvil, or reopen the browser if there is no anvil. */
+	private void refresh(MinecraftClient client, ScreenHandler handler, AuctionScan scan, long now) {
+		while (!refreshTimes.isEmpty() && now - refreshTimes.peekFirst() > 60_000L) {
+			refreshTimes.pollFirst();
+		}
+		if (refreshTimes.size() >= settings.maxRefreshesPerMinute) {
+			// Reloading faster than this is all load and no information.
+			delay(now, 1_500);
+			return;
+		}
+
+		if (scan.refreshSlot() >= 0) {
+			click(client, handler, scan.refreshSlot());
+		} else {
+			client.player.closeHandledScreen();
+			enter(Stage.OPENING, now);
+		}
+		refreshTimes.addLast(now);
+		refreshes++;
+		delay(now, settings.refreshDelayMs);
+	}
+
+	/**
+	 * Work through whatever the buy click opened.
+	 *
+	 * <p>Auction houses put anywhere from one to three screens between a click
+	 * and the item - an item view, a confirmation, sometimes a collect step - so
+	 * rather than encoding a particular flow this presses the buttons it
+	 * recognises, once each, until the item turns up in the inventory.
+	 */
+	private void buying(MinecraftClient client, long now) {
+		if (buyFailedSignal) {
+			buyFailedSignal = false;
+			boughtSignal = false;
+			pending = null;
+			status = "that listing was already gone";
+			backToBrowsing(client, now);
+			return;
+		}
+
+		// Counted rather than looked for: the player may already own one of
+		// these, and "it is in my inventory" would then be true before the
+		// purchase ever went through.
+		if (pending != null && (boughtSignal || inventoryCount(client, pending.key()) > pendingCountBefore)) {
+			boughtSignal = false;
+			errors = 0;
+			spent += pending.price();
+			status = "bought " + pending.display();
+			enter(Stage.LISTING, now);
+			return;
+		}
+
+		ScreenHandler handler = container(client);
+		if (handler == null) {
+			if (now - stageStart > BUY_TIMEOUT_MS) {
+				pending = null;
+				backToBrowsing(client, now);
+			}
+			return;
+		}
+
+		int button = findButton(handler, settings.buyButtons);
+		if (button >= 0 && clickOnce(client, handler, button)) {
+			status = "confirming the purchase";
+			delay(now, settings.actionDelayMs);
+			return;
+		}
+
+		if (now - stageStart > BUY_TIMEOUT_MS) {
+			// Either the purchase went through quietly or the flow is one we do
+			// not know; either way the inventory check above is the source of
+			// truth, and it has not fired.
+			errors++;
+			pending = null;
+			if (errors > MAX_ERRORS) {
+				stop(client, "could not work out the buy screen - check flip.buyButtons");
+				return;
+			}
+			backToBrowsing(client, now);
+		}
+	}
+
+	/** Put the bought item in hand and send the sell command. */
+	private void listing(MinecraftClient client, long now) {
+		if (pending == null) {
+			backToBrowsing(client, now);
+			return;
+		}
+
+		if (client.currentScreen != null) {
+			client.player.closeHandledScreen();
+			delay(now, 400);
+			return;
+		}
+
+		int slotId = inventorySlot(client, pending.key());
+		if (slotId < 0) {
+			tell(client, "Bought item is not in the inventory, skipping the relist");
+			pending = null;
+			backToBrowsing(client, now);
+			return;
+		}
+
+		int selected = client.player.getInventory().getSelectedSlot();
+		Slot slot = client.player.playerScreenHandler.getSlot(slotId);
+		if (slot.getIndex() != selected) {
+			// Swap it into the hand: the sell command reads what is held.
+			client.interactionManager.clickSlot(
+					client.player.playerScreenHandler.syncId,
+					slotId,
+					selected,
+					SlotActionType.SWAP,
+					client.player);
+			delay(now, 300);
+			return;
+		}
+
+		long price = askingPrice(pending);
+		send(client, settings.sellCommandFor(price));
+		status = "listing " + pending.display() + " at " + AuctionParser.coins(price);
+		listedSignal = false;
+		enter(Stage.LISTED, now);
+		delay(now, 700);
+	}
+
+	/** Confirm the listing if the server asks, then go back to browsing. */
+	private void listed(MinecraftClient client, long now) {
+		if (listedSignal) {
+			listedSignal = false;
+			finishListing(client, now);
+			return;
+		}
+
+		ScreenHandler handler = container(client);
+		if (handler != null) {
+			int button = findButton(handler, settings.sellButtons);
+			if (button >= 0 && clickOnce(client, handler, button)) {
+				delay(now, settings.actionDelayMs);
+				return;
+			}
+		}
+
+		if (now - stageStart > LIST_TIMEOUT_MS) {
+			// No confirmation came back. The item may or may not be listed, so
+			// say nothing about profit and carry on.
+			tell(client, "No listing confirmation - check the item and flip.sellCommand");
+			pending = null;
+			backToBrowsing(client, now);
+		}
+	}
+
+	private void finishListing(MinecraftClient client, long now) {
+		if (pending != null) {
+			flips++;
+			expectedProfit += pending.profit();
+		}
+		pending = null;
+
+		if (settings.stopAfterFlips > 0 && flips >= settings.stopAfterFlips) {
+			stop(client, "done " + flips + " flips");
+			return;
+		}
+		if (settings.sessionBudget > 0 && spent >= settings.sessionBudget) {
+			stop(client, "session budget of " + AuctionParser.coins(settings.sessionBudget) + " is spent");
+			return;
+		}
+		backToBrowsing(client, now);
+	}
+
+	private void backToBrowsing(MinecraftClient client, long now) {
+		if (isBrowser(client)) {
+			enter(Stage.BROWSING, now);
+		} else {
+			enter(Stage.OPENING, now);
+		}
+		delay(now, settings.actionDelayMs);
+	}
+
+	// ----------------------------------------------------------------- maths
+
+	/**
+	 * Score every listing on the page and return the best one worth buying.
+	 *
+	 * <p>For a listing at price {@code p} of an item the model values at
+	 * {@code v}, with the next cheapest copy on the page at {@code c}:
+	 *
+	 * <pre>
+	 *   resale = min(v, c) x (1 - undercut)     what it can be sold for
+	 *   net    = resale x (1 - tax)             what lands in the purse
+	 *   profit = net - p
+	 *   margin = profit / p
+	 *   score  = profit x confidence x supply
+	 * </pre>
+	 *
+	 * <p>Scoring by profit alone would keep picking the one huge margin the
+	 * model is least sure about. Multiplying by confidence prefers the flip that
+	 * is most likely to be real, and the supply term nudges it towards items
+	 * that show up often, because those are the ones that sell again quickly.
+	 */
+	private Candidate evaluate(AuctionScan scan, long now) {
+		List<Candidate> found = new ArrayList<>();
+
+		for (AuctionScan.Listing listing : scan.listings()) {
+			if (listing.price() <= 0) {
+				continue;
+			}
+			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
+			if (!appraisal.isKnown()
+					|| appraisal.samples() < settings.minSamples
+					|| appraisal.confidence() < settings.minConfidence
+					|| appraisal.dispersion() > settings.maxDispersion) {
+				continue;
+			}
+
+			long competitor = scan.competitor(listing.key());
+			long reference = competitor > 0 ? Math.min(appraisal.fairValue(), competitor) : appraisal.fairValue();
+			long sale = Math.round(reference * (1.0 - settings.undercut));
+			long net = Math.round(sale * (1.0 - settings.saleTax));
+			long profit = net - listing.price();
+			if (profit < settings.minProfit) {
+				continue;
+			}
+			double margin = profit / (double) listing.price();
+			if (margin < settings.minMargin) {
+				continue;
+			}
+			// A margin this big usually means two different items are sharing a
+			// name - a reforge, an enchant, a pet level the lore did not show.
+			if (margin > settings.suspiciousMargin && appraisal.samples() < settings.trustedSamples) {
+				continue;
+			}
+
+			double score = profit * appraisal.confidence() * (0.5 + 0.5 * appraisal.supplyRate());
+			found.add(new Candidate(
+					listing.slotId(),
+					listing.key(),
+					listing.display(),
+					listing.price(),
+					sale,
+					profit,
+					margin,
+					appraisal.confidence(),
+					score));
+		}
+
+		found.sort((left, right) -> Double.compare(right.score(), left.score()));
+
+		report.clear();
+		for (int i = 0; i < Math.min(REPORT_LINES, found.size()); i++) {
+			Candidate candidate = found.get(i);
+			report.add(String.format(
+					Locale.ROOT,
+					"%s  %s -> %s  +%s (%.0f%%)",
+					shorten(candidate.display()),
+					AuctionParser.coins(candidate.price()),
+					AuctionParser.coins(candidate.sale()),
+					AuctionParser.coins(candidate.profit()),
+					candidate.margin() * 100.0));
+		}
+
+		return found.isEmpty() ? null : found.get(0);
+	}
+
+	private boolean affordable(Candidate candidate) {
+		if (candidate.price() > settings.maxSpendPerItem) {
+			return false;
+		}
+		return settings.sessionBudget <= 0 || spent + candidate.price() <= settings.sessionBudget;
+	}
+
+	/** Just under the cheapest competing copy, and never below what it cost. */
+	private long askingPrice(Candidate candidate) {
+		long floor = Math.round(candidate.price() * (1.0 + settings.minMargin));
+		return roundNicely(Math.max(candidate.sale(), floor));
+	}
+
+	/** 1,238,491 becomes 1,230,000: round numbers look like a person typed them. */
+	private static long roundNicely(long amount) {
+		if (amount < 1_000L) {
+			return amount;
+		}
+		long magnitude = 1L;
+		long scratch = amount;
+		while (scratch >= 1_000L) {
+			scratch /= 10L;
+			magnitude *= 10L;
+		}
+		return Math.max(1L, amount / magnitude * magnitude);
+	}
+
+	// --------------------------------------------------------------- clicking
+
+	private void click(MinecraftClient client, ScreenHandler handler, int slotId) {
+		if (slotId < 0 || client.interactionManager == null || client.player == null) {
+			return;
+		}
+		client.interactionManager.clickSlot(handler.syncId, slotId, 0, SlotActionType.PICKUP, client.player);
+	}
+
+	/** Click a button at most once per screen, so a slow server is not spammed. */
+	private boolean clickOnce(MinecraftClient client, ScreenHandler handler, int slotId) {
+		if (handler.syncId != clickedSyncId) {
+			clickedSyncId = handler.syncId;
+			clickedSlots.clear();
+		}
+		if (!clickedSlots.add(slotId)) {
+			return false;
+		}
+		click(client, handler, slotId);
+		return true;
+	}
+
+	private int findButton(ScreenHandler handler, List<String> names) {
+		for (Slot slot : handler.slots) {
+			if (slot.inventory instanceof PlayerInventory) {
+				continue;
+			}
+			ItemStack stack = slot.getStack();
+			if (!stack.isEmpty() && AuctionParser.isButton(stack, names)) {
+				return slot.id;
+			}
+		}
+		return -1;
+	}
+
+	/** The player inventory slot holding an item with this key, or -1. */
+	private int inventorySlot(MinecraftClient client, String key) {
+		PlayerScreenHandler handler = client.player.playerScreenHandler;
+		for (Slot slot : handler.slots) {
+			if (!(slot.inventory instanceof PlayerInventory)) {
+				continue;
+			}
+			ItemStack stack = slot.getStack();
+			if (!stack.isEmpty() && key.equals(AuctionParser.itemKey(stack))) {
+				return slot.id;
+			}
+		}
+		return -1;
+	}
+
+	/** How many stacks of this item the player is carrying. */
+	private int inventoryCount(MinecraftClient client, String key) {
+		int count = 0;
+		for (Slot slot : client.player.playerScreenHandler.slots) {
+			if (!(slot.inventory instanceof PlayerInventory)) {
+				continue;
+			}
+			ItemStack stack = slot.getStack();
+			if (!stack.isEmpty() && key.equals(AuctionParser.itemKey(stack))) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	// ----------------------------------------------------------------- state
+
+	private void enter(Stage next, long now) {
+		stage = next;
+		stageStart = now;
+		clickedSyncId = -1;
+		commandSent = false;
+		clickedSlots.clear();
+	}
+
+	private void delay(long now, int base) {
+		nextActionAt = now + base + random.nextInt(Math.max(1, settings.actionJitterMs));
+	}
+
+	private void stop(MinecraftClient client, String reason) {
+		stage = Stage.STOPPED;
+		status = "stopped: " + reason;
+		pending = null;
+		tell(client, "Flipper stopped - " + reason);
+		market.save();
+		setEnabled(false);
+	}
+
+	private ScreenHandler container(MinecraftClient client) {
+		if (client.currentScreen instanceof HandledScreen<?> screen) {
+			ScreenHandler handler = screen.getScreenHandler();
+			return handler instanceof PlayerScreenHandler ? null : handler;
+		}
+		return null;
+	}
+
+	private boolean isBrowser(MinecraftClient client) {
+		if (container(client) == null || client.currentScreen == null) {
+			return false;
+		}
+		String title = AuctionParser.plain(client.currentScreen.getTitle()).toLowerCase(Locale.ROOT);
+		for (String needle : settings.browseTitles) {
+			if (title.contains(needle)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void send(MinecraftClient client, String command) {
+		if (client.getNetworkHandler() == null) {
+			return;
+		}
+		String trimmed = command.trim();
+		if (trimmed.startsWith("/")) {
+			trimmed = trimmed.substring(1);
+		}
+		if (!trimmed.isEmpty()) {
+			client.getNetworkHandler().sendChatCommand(trimmed);
+		}
+	}
+
+	private void tell(MinecraftClient client, String message) {
+		if (client.player != null) {
+			client.player.sendMessage(Text.literal("[Blueprint] " + message), false);
+		}
+	}
+
+	// ------------------------------------------------------------------- chat
+
+	/** Called for every server message, so the machine can hear how a click went. */
+	public static void onServerMessage(String raw) {
+		AuctionFlipper flipper = active;
+		if (flipper == null || !flipper.isEnabled()) {
+			return;
+		}
+		String message = raw.toLowerCase(Locale.ROOT);
+		FlipSettings settings = flipper.settings;
+		if (contains(message, settings.boughtMessages)) {
+			flipper.boughtSignal = true;
+		}
+		if (contains(message, settings.buyFailedMessages)) {
+			flipper.buyFailedSignal = true;
+		}
+		if (contains(message, settings.listedMessages)) {
+			flipper.listedSignal = true;
+		}
+	}
+
+	private static boolean contains(String message, List<String> needles) {
+		for (String needle : needles) {
+			if (!needle.isEmpty() && message.contains(needle)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// --------------------------------------------------------------- readouts
+
+	public Stage stage() {
+		return stage;
+	}
+
+	public String statusLine() {
+		return status;
+	}
+
+	public MarketModel market() {
+		return market;
+	}
+
+	public List<String> report() {
+		return report;
+	}
+
+	public boolean isDryRun() {
+		return dryRun;
+	}
+
+	/** The HUD line: what it is doing, and what it has done. */
+	public String summary() {
+		return String.format(
+				Locale.ROOT,
+				"Flip: %s | %d scans | %d flips | spent %s | est %s%s",
+				stage.name().toLowerCase(Locale.ROOT),
+				scans,
+				flips,
+				AuctionParser.coins(spent),
+				AuctionParser.coins(expectedProfit),
+				dryRun ? " | dry run" : "");
+	}
+
+	/** The panel drawn over the auction house, so the reasoning is visible. */
+	public void renderOverlay(DrawContext context, MinecraftClient client) {
+		if (!isEnabled() || client.textRenderer == null) {
+			return;
+		}
+
+		List<String> lines = new ArrayList<>();
+		lines.add(summary());
+		lines.add(status);
+		if (report.isEmpty()) {
+			lines.add("no listing clears the thresholds yet");
+		} else {
+			lines.addAll(report);
+		}
+
+		int width = 0;
+		for (String line : lines) {
+			width = Math.max(width, client.textRenderer.getWidth(line));
+		}
+		int height = lines.size() * (client.textRenderer.fontHeight + 2) + 6;
+		int x = 4;
+		int y = 4;
+
+		context.fill(x, y, x + width + 8, y + height, 0xC0050D1A);
+		context.fill(x, y, x + width + 8, y + 1, 0xFF1B3A63);
+		context.fill(x, y + height - 1, x + width + 8, y + height, 0xFF1B3A63);
+
+		int line = y + 4;
+		for (String text : lines) {
+			context.drawTextWithShadow(client.textRenderer, text, x + 4, line, HUD_COLOR);
+			line += client.textRenderer.fontHeight + 2;
+		}
+	}
+
+	private static String shorten(String display) {
+		return display.length() <= 22 ? display : display.substring(0, 21) + "…";
+	}
+}

@@ -1,5 +1,7 @@
 package com.blueprintclient.module;
 
+import com.blueprintclient.flip.AuctionFlipper;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
@@ -61,10 +63,14 @@ public final class Modules {
 	public static final Module ARMOR = register(new ArmorDisplay());
 	public static final Module CPS = register(new CpsCounter());
 	public static final Module SESSION = register(new SessionTimer());
+	public static final Module FLIP_STATS = register(new FlipStats());
 	public static final Module KEYSTROKES = register(new Keystrokes());
 
 	public static final Module AUTO_SPRINT = register(new AutoSprint());
 	public static final Module AUTO_JUMP = register(new AutoJump());
+
+	public static final AuctionFlipper AUTO_FLIP = register(new AuctionFlipper());
+	public static final Module FLIP_DRY_RUN = register(new FlipDryRun());
 
 	public static final Module HIDE_HUD = register(new HideHud());
 	public static final Module COPY_COORDS = register(new CopyCoords());
@@ -799,6 +805,39 @@ public final class Modules {
 			}
 			// An action, not a state: turn back off so the row reads OFF again.
 			setEnabled(false);
+		}
+	}
+
+	// ----------------------------------------------------------------- economy
+
+	private static final class FlipStats extends Module {
+		private FlipStats() {
+			super("Flip Stats", Category.HUD, "What the auction flipper is doing, and what it has made.");
+		}
+
+		@Override
+		public String hudLine(MinecraftClient client) {
+			return AUTO_FLIP.summary();
+		}
+	}
+
+	/**
+	 * The safety catch: the flipper still reads the market and shows what it
+	 * would do, but never clicks buy or sell.
+	 */
+	private static final class FlipDryRun extends Module {
+		private FlipDryRun() {
+			super("Flip Dry Run", Category.ECONOMY, "Score flips and show them, but never buy or sell.");
+		}
+
+		@Override
+		protected void onEnable(MinecraftClient client) {
+			AUTO_FLIP.setDryRun(true);
+		}
+
+		@Override
+		protected void onDisable(MinecraftClient client) {
+			AUTO_FLIP.setDryRun(false);
 		}
 	}
 }

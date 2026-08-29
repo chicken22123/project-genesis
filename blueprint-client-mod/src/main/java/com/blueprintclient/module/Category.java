@@ -6,6 +6,7 @@ public enum Category {
 	VISUAL("Visual"),
 	HUD("HUD"),
 	MOVEMENT("Movement"),
+	ECONOMY("Economy"),
 	UTILITY("Utility");
 
 	private final String displayName;

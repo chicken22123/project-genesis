@@ -1,17 +1,20 @@
 package com.blueprintclient;
 
+import com.blueprintclient.flip.AuctionFlipper;
 import com.blueprintclient.module.Module;
 import com.blueprintclient.module.Modules;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
@@ -37,6 +40,20 @@ public class BlueprintClientMod implements ClientModInitializer {
 		ScreenEvents.BEFORE_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
 			if (screen instanceof TitleScreen && !(screen instanceof BlueprintTitleScreen)) {
 				client.setScreen(new BlueprintTitleScreen());
+			}
+		});
+
+		// The auction flipper listens for the server telling it a purchase or a
+		// listing went through. Those arrive as system messages, not chat.
+		ClientReceiveMessageEvents.GAME.register((message, overlay) ->
+				AuctionFlipper.onServerMessage(message.getString()));
+
+		// The flipper's own panel, drawn over whatever container GUI is open so
+		// its reasoning is visible while it works.
+		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+			if (screen instanceof HandledScreen<?>) {
+				ScreenEvents.afterRender(screen).register((rendered, context, mouseX, mouseY, delta) ->
+						Modules.AUTO_FLIP.renderOverlay(context, MinecraftClient.getInstance()));
 			}
 		});
 

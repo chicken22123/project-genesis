@@ -3,7 +3,7 @@
   "id": "blueprintclient",
   "version": "${version}",
   "name": "Blueprint Client",
-  "description": "Blueprint Client: an in-game module menu with draggable panels, search and a rebindable key, plus HUD and comfort modules.",
+  "description": "Blueprint Client: an in-game module menu with draggable panels, search and a rebindable key, plus HUD, comfort and auction house modules.",
   "authors": [],
   "contact": {},
   "license": "MIT",
