@@ -80,8 +80,13 @@ public final class FlipSettings {
 
 	/** Money limits. Nothing outside these is ever clicked. */
 	public long minListingPrice = 0L;
-	public long maxSpendPerItem = 10_000_000L;
-	public long sessionBudget = 100_000_000L;
+	/**
+	 * The most one listing may cost. Elytras and netherite are not cheap, so
+	 * this starts high enough to buy them; 0 removes the ceiling entirely and
+	 * leaves {@link #sessionBudget} as the only limit.
+	 */
+	public long maxSpendPerItem = 250_000_000L;
+	public long sessionBudget = 1_000_000_000L;
 	public int stopAfterFlips = 0;
 
 	/** What counts as worth buying. */

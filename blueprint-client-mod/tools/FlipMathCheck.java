@@ -36,6 +36,7 @@ public final class FlipMathCheck {
 		haircut();
 		stacks();
 		asking();
+		defaults();
 		sellCommand();
 		sellChains();
 		warmUp();
@@ -564,6 +565,38 @@ public final class FlipMathCheck {
 		check(
 				"never at a loss, even if the market moved under us",
 				FlipMath.askingPrice(60_000L, 10_000L, settings) > 60_000L);
+	}
+
+	/** The shipped defaults have to allow the things people actually flip. */
+	private static void defaults() {
+		section("out of the box");
+
+		FlipSettings settings = FlipSettings.defaults();
+		MarketModel.Appraisal elytra = new MarketModel.Appraisal(80_000_000L, 0.05, 0.8, 10, 0.6, 4, 1.0);
+
+		check("an elytra at sixty million is not over the ceiling", settings.maxSpendPerItem >= 60_000_000L);
+		equal(
+				"and is bought like anything else",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Elytra", 40_000_000L, 1, 0L, 5, elytra, settings).verdict());
+		equal(
+				"a stack of netherite ingots too",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess(
+								"64x Netherite Ingot",
+								120_000_000L,
+								64,
+								0L,
+								5,
+								new MarketModel.Appraisal(4_000_000L, 0.05, 0.8, 10, 0.6, 4, 1.0),
+								settings)
+						.verdict());
+		check("with a session budget that allows more than one of them",
+				settings.sessionBudget > settings.maxSpendPerItem);
+		equal(
+				"dirt is still dirt",
+				FlipMath.Verdict.BLOCKED,
+				FlipMath.assess("Dirt", 1_000L, 1, 0L, 5, elytra, settings).verdict());
 	}
 
 	private static void sellCommand() {

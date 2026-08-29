@@ -104,7 +104,7 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.priceRules, value -> settings.priceRules = value));
 		rows.add(number("Min per listing", "Ignore listings cheaper than this. 0 for no floor.",
 				() -> settings.minListingPrice, value -> settings.minListingPrice = value));
-		rows.add(number("Max per listing", "Never click a listing dearer than this. Stacks count as one listing.",
+		rows.add(number("Max per listing", "Never click a listing dearer than this; a stack is one listing. 0 for no ceiling.",
 				() -> settings.maxSpendPerItem, value -> settings.maxSpendPerItem = value));
 		rows.add(number("Ignore under", "Ignore anything worth less than this each. 0 considers everything.",
 				() -> settings.minUnitValue, value -> settings.minUnitValue = value));
