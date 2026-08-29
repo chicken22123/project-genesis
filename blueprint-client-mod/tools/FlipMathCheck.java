@@ -28,6 +28,7 @@ public final class FlipMathCheck {
 		scoring();
 		stacks();
 		asking();
+		sellCommand();
 		sellChains();
 		warmUp();
 
@@ -284,6 +285,24 @@ public final class FlipMathCheck {
 		check(
 				"never at a loss, even if the market moved under us",
 				FlipMath.askingPrice(60_000L, 10_000L, settings) > 60_000L);
+	}
+
+	private static void sellCommand() {
+		section("the sell command");
+
+		FlipSettings settings = FlipSettings.defaults();
+		equal("the default is the one DonutSMP takes", "ah sell %price%", settings.sellCommand);
+		equal("filled in with a plain number", "ah sell 1230000", settings.sellCommandFor(1_230_000L));
+		equal(
+				"a price is a round number a server will accept",
+				"ah sell 1230000",
+				settings.sellCommandFor(FlipMath.roundNicely(1_238_491L)));
+
+		settings.sellCommand = "/auction sell %price% confirm";
+		equal("any wording works", "/auction sell 500 confirm", settings.sellCommandFor(500L));
+
+		settings.sellCommand = "ah sell";
+		equal("a command with no place for the price is left alone", "ah sell", settings.sellCommandFor(500L));
 	}
 
 	private static void sellChains() {

@@ -33,8 +33,9 @@ something the mod can soften.
 3. Feed the cheapest copy of each item into the price model.
 4. Score every listing. If one clears all the thresholds, click it and press
    whatever buy and confirm buttons the following screens hold.
-5. Once the item is in the inventory, list it again just under the cheapest
-   competing copy - by sell command, or by walking the menus (below).
+5. Once the item is in the inventory, put it in hand and send
+   `/ah sell <price>`, just under the cheapest competing copy. Servers with no
+   sell command are covered further down.
 6. Otherwise click the anvil to reload the page, and go back to step 2.
 
 Nothing else is ever clicked. The flipper only touches a slot it has priced, or
@@ -122,6 +123,33 @@ Prices seen are kept in `config/blueprintclient-market.properties` and reloaded
 next session, so the warm-up only really happens once. Samples older than six
 hours are dropped: they describe an older market.
 
+## Listing with /ah sell
+
+This is the default path, and what DonutSMP takes.
+
+The item arrives from a purchase wherever there was room, and `/ah sell` lists
+whatever is in your hand, so the flipper swaps the bought item into your
+selected hotbar slot first - whatever you were holding goes to where the bought
+item was, so nothing is lost - and only sends the command once the held stack is
+really the right one. A sell command sent a moment early lists your pickaxe.
+
+The price is a plain whole number, rounded to something a person would type:
+`ah sell 1230000`. If a confirmation menu opens, the buttons named in
+`flip.sellButtons` are pressed.
+
+**A listing counts as made when the item leaves your inventory**, not when the
+chat says something. That works whatever wording the server uses, and it is the
+same test the buying side uses. Two things can go wrong instead:
+
+- the server refuses - an auction limit, a price it will not take, an empty hand
+  - which is matched against `flip.listFailedMessages`. The flipper says so, and
+  after a few in a row it stops rather than buying things it cannot sell on;
+- nothing happens at all within eight seconds, which usually means
+  `flip.sellCommand` is not this server's command.
+
+It also refuses to buy anything while your inventory is full, since the purchase
+would have nowhere to land.
+
 ## Listing where there is no sell command
 
 Plenty of servers - Hypixel among them - have nothing like `/ah sell 1000`.
@@ -159,7 +187,7 @@ they can be run without the game, the mappings or a Gradle build:
 blueprint-client-mod/tools/check-flip-math.sh
 ```
 
-It compiles five classes and runs 93 checks over them - what counts as a price,
+It compiles five classes and runs 98 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
 how a sell chain is read, and that nothing is bought before the market has been
 watched. Worth running
@@ -190,6 +218,7 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | `flip.boughtMessages` | `you purchased,you bought,…` | Chat wording that means the purchase worked. |
 | `flip.buyFailedMessages` | `not enough coins,already been sold,…` | Wording that means it did not. |
 | `flip.listedMessages` | `auction started,you listed,…` | Wording that means the relist worked. |
+| `flip.listFailedMessages` | `too many,invalid price,…` | Wording that means the sell command was refused. |
 | `flip.maxSpendPerItem` | `10000000` | Never click a listing above this. A stack is one listing. |
 | `flip.sessionBudget` | `100000000` | Stop once this much has been spent. |
 | `flip.stopAfterFlips` | `0` | Stop after this many flips; 0 means no limit. |
@@ -226,7 +255,8 @@ Then watch the `would buy` lines for a while. They are what it would have spent
 money on; if they look like sensible trades, turn Dry Run off.
 
 Listing uses `/ah sell %price%` with the item in hand, which is what DonutSMP
-takes. If that ever changes to a menu, `flip.sellFlow` above covers it without
+takes - see "Listing with /ah sell" above for what it does and how it knows it
+worked. If the server ever moves to a menu, `flip.sellFlow` covers that without
 touching the mod.
 
 ## When it stops by itself

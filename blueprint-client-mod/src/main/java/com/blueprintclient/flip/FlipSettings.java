@@ -54,6 +54,20 @@ public final class FlipSettings {
 			"already been sold",
 			"no longer available",
 			"has been sold");
+	/** Wording that means the sell command was refused: a limit, a bad price, an empty hand. */
+	public List<String> listFailedMessages = list(
+			"too many",
+			"maximum amount",
+			"auction limit",
+			"invalid price",
+			"cannot sell",
+			"can't sell",
+			"must hold",
+			"hold an item",
+			"nothing in your hand",
+			"not allowed to sell",
+			"blacklisted");
+
 	public List<String> listedMessages =
 			list("auction started", "you listed", "you have listed", "put up for auction", "listed for", "now selling");
 
@@ -112,6 +126,7 @@ public final class FlipSettings {
 		boughtMessages = words(properties, "flip.boughtMessages", boughtMessages);
 		buyFailedMessages = words(properties, "flip.buyFailedMessages", buyFailedMessages);
 		listedMessages = words(properties, "flip.listedMessages", listedMessages);
+		listFailedMessages = words(properties, "flip.listFailedMessages", listFailedMessages);
 
 		maxSpendPerItem = number(properties, "flip.maxSpendPerItem", maxSpendPerItem);
 		sessionBudget = number(properties, "flip.sessionBudget", sessionBudget);
@@ -148,6 +163,7 @@ public final class FlipSettings {
 		properties.setProperty("flip.boughtMessages", String.join(",", boughtMessages));
 		properties.setProperty("flip.buyFailedMessages", String.join(",", buyFailedMessages));
 		properties.setProperty("flip.listedMessages", String.join(",", listedMessages));
+		properties.setProperty("flip.listFailedMessages", String.join(",", listFailedMessages));
 
 		properties.setProperty("flip.maxSpendPerItem", Long.toString(maxSpendPerItem));
 		properties.setProperty("flip.sessionBudget", Long.toString(sessionBudget));

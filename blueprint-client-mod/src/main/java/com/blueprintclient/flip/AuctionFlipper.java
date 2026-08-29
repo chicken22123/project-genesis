@@ -95,6 +95,7 @@ public final class AuctionFlipper extends Module {
 	private long stepStart;
 	private boolean flowOpened;
 	private long listingPrice;
+	private int listingCountBefore;
 	private String status = "off";
 
 	// Running totals for the HUD.
@@ -108,6 +109,7 @@ public final class AuctionFlipper extends Module {
 	private volatile boolean boughtSignal;
 	private volatile boolean buyFailedSignal;
 	private volatile boolean listedSignal;
+	private volatile boolean listFailedSignal;
 
 	private boolean dryRun;
 
@@ -259,6 +261,10 @@ public final class AuctionFlipper extends Module {
 		}
 
 		Candidate best = evaluate(scan, now);
+		if (best != null && !dryRun && !inventoryHasRoom(client)) {
+			stop(client, "the inventory is full - nothing bought would have anywhere to go");
+			return;
+		}
 		if (best != null && !dryRun && affordable(best)) {
 			pending = best;
 			pendingCountBefore = inventoryCount(client, best.key());
@@ -397,11 +403,33 @@ public final class AuctionFlipper extends Module {
 		listByCommand(client, now);
 	}
 
-	/** The simple case: a server with a real sell command reads what is held. */
+	/**
+	 * The {@code /ah sell 1230000} case: the server lists whatever is in hand.
+	 *
+	 * <p>Which means the item has to actually be in hand before the command
+	 * goes anywhere. It arrives from a purchase wherever there was room, so it
+	 * gets swapped into the held slot first, and the command is only sent once
+	 * the held stack is the right one - a sell command sent while holding a
+	 * pickaxe lists the pickaxe.
+	 */
 	private void listByCommand(MinecraftClient client, long now) {
 		if (client.currentScreen != null) {
+			// The swap goes through the player's own inventory, which is not
+			// the handler on screen while a menu is open.
 			client.player.closeHandledScreen();
 			delay(now, 400);
+			return;
+		}
+
+		if (now - stageStart > LIST_TIMEOUT_MS) {
+			tell(client, "Could not get " + describePending() + " into my hand to sell it");
+			errors++;
+			pending = null;
+			if (errors > MAX_ERRORS) {
+				stop(client, "the bought items cannot be put in hand to be sold");
+				return;
+			}
+			backToBrowsing(client, now);
 			return;
 		}
 
@@ -427,16 +455,44 @@ public final class AuctionFlipper extends Module {
 			return;
 		}
 
+		// What the hand holds now, so the listing can be told to have worked by
+		// the item leaving rather than by hoping the server's wording matches.
+		listingCountBefore = inventoryCount(client, pending.key());
 		send(client, settings.sellCommandFor(listingPrice));
 		status = "listing " + pending.display() + " at " + money(listingPrice);
 		listedSignal = false;
+		listFailedSignal = false;
 		enter(Stage.LISTED, now);
 		delay(now, 700);
 	}
 
 	/** Confirm the listing if the server asks, then go back to browsing. */
 	private void listed(MinecraftClient client, long now) {
-		if (listedSignal) {
+		if (listFailedSignal) {
+			listFailedSignal = false;
+			listedSignal = false;
+			tell(client, "The server would not list " + describePending()
+					+ " - an auction limit, or a price it will not take");
+			errors++;
+			pending = null;
+			if (errors > MAX_ERRORS) {
+				stop(client, "the server keeps refusing to list what is bought");
+				return;
+			}
+			backToBrowsing(client, now);
+			return;
+		}
+
+		// The item leaving the inventory is the listing having worked. It says
+		// so whatever the server's wording, and it is the same thing the buy
+		// side trusts.
+		// Only the command path can be judged this way. In a menu chain the item
+		// leaves the inventory when it goes into the auction slot, which is
+		// several clicks before the listing is actually made.
+		boolean gone = settings.sellFlow.isBlank()
+				&& pending != null
+				&& inventoryCount(client, pending.key()) < listingCountBefore;
+		if (listedSignal || gone) {
 			listedSignal = false;
 			finishListing(client, now);
 			return;
@@ -456,12 +512,21 @@ public final class AuctionFlipper extends Module {
 		}
 
 		if (now - stageStart > LIST_TIMEOUT_MS) {
-			// No confirmation came back. The item may or may not be listed, so
-			// say nothing about profit and carry on.
-			tell(client, "No listing confirmation - check the item and flip.sellCommand");
+			// The item is still here and nothing was said about it, so the
+			// command did not do what it was meant to.
+			tell(client, "Still holding " + describePending() + " - check flip.sellCommand");
+			errors++;
 			pending = null;
+			if (errors > MAX_ERRORS) {
+				stop(client, "nothing bought is getting listed - check flip.sellCommand");
+				return;
+			}
 			backToBrowsing(client, now);
 		}
+	}
+
+	private String describePending() {
+		return pending == null ? "the item" : pending.display();
 	}
 
 	private void finishListing(MinecraftClient client, long now) {
@@ -597,6 +662,18 @@ public final class AuctionFlipper extends Module {
 		return -1;
 	}
 
+	/** Whether a purchase would have somewhere to land. */
+	private boolean inventoryHasRoom(MinecraftClient client) {
+		for (Slot slot : client.player.playerScreenHandler.slots) {
+			// Below 36 is the inventory proper and the hotbar; the armour and
+			// offhand slots above it are no use to a bought item.
+			if (slot.inventory instanceof PlayerInventory && slot.getIndex() < 36 && !slot.hasStack()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** How many stacks of this item the player is carrying. */
 	private int inventoryCount(MinecraftClient client, String key) {
 		int count = 0;
@@ -701,6 +778,9 @@ public final class AuctionFlipper extends Module {
 		}
 		if (contains(message, settings.listedMessages)) {
 			flipper.listedSignal = true;
+		}
+		if (contains(message, settings.listFailedMessages)) {
+			flipper.listFailedSignal = true;
 		}
 	}
 

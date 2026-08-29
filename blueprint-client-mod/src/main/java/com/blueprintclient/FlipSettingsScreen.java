@@ -139,6 +139,8 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.buyFailedMessages, value -> settings.buyFailedMessages = value));
 		rows.add(words("Listed wording", "Chat wording that means the relist worked.",
 				() -> settings.listedMessages, value -> settings.listedMessages = value));
+		rows.add(words("Refused wording", "Chat wording that means the sell command was refused.",
+				() -> settings.listFailedMessages, value -> settings.listFailedMessages = value));
 		rows.add(number("Click delay", "Milliseconds between clicks; each one is a round trip.",
 				() -> (long) settings.actionDelayMs, value -> settings.actionDelayMs = (int) value));
 		rows.add(number("Click jitter", "Random milliseconds added to every pause.",
