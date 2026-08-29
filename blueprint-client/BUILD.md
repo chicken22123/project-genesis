@@ -1,7 +1,8 @@
 # Building the Blueprint Client .exe
 
 Windows only. PyInstaller does not cross-compile, so a Windows executable has
-to be built on Windows.
+to be built on Windows. To run the launcher on Linux or ChromeOS instead, see
+[RUNNING-ON-LINUX.md](RUNNING-ON-LINUX.md) - no build step is needed there.
 
 ## The short version
 

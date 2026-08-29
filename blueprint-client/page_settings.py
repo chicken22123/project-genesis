@@ -5,10 +5,22 @@ Values map one-to-one onto ``blueprint_instance.json``; blank or unticked means
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog
 
 import theme
+
+# The two places the page has to name a real path, which differ per platform.
+if sys.platform.startswith("win"):
+    _JAVA_NAME = "java.exe"
+    _DATA_HINT = "%APPDATA%\\ModrinthApp"
+elif sys.platform == "darwin":
+    _JAVA_NAME = "the java binary"
+    _DATA_HINT = "~/Library/Application Support/ModrinthApp"
+else:
+    _JAVA_NAME = "the java binary"
+    _DATA_HINT = "~/.local/share/ModrinthApp"
 
 MIN_MEMORY_MB = 1024
 MAX_MEMORY_MB = 16384
@@ -106,11 +118,11 @@ class SettingsPage(tk.Frame):
 
         self._field(panel, "Java executable", self.java,
                     "Blank uses the runtime Modrinth installed.",
-                    browse=lambda: self._browse_file(self.java, "Select java.exe"))
+                    browse=lambda: self._browse_file(self.java, f"Select {_JAVA_NAME}"))
         self._field(panel, "Extra Java arguments", self.java_args,
                     "Separated by spaces, for example -XX:+UseG1GC.")
         self._field(panel, "Modrinth data folder", self.data_dir,
-                    "Blank finds %APPDATA%\\ModrinthApp automatically.",
+                    f"Blank finds {_DATA_HINT} automatically.",
                     browse=lambda: self._browse_dir(self.data_dir, "Select the Modrinth data folder"))
 
         theme.separator(panel).pack(fill="x", padx=18, pady=(4, 12))
@@ -246,7 +258,13 @@ class SettingsPage(tk.Frame):
     def _browse_file(self, variable, title):
         path = filedialog.askopenfilename(
             parent=self, title=title, initialdir=_start_dir(variable.get()),
-            filetypes=[("Programs", "*.exe"), ("All files", "*.*")],
+            # A *.exe filter hides every java binary on Linux and macOS,
+            # where the thing being picked has no extension at all.
+            filetypes=(
+                [("Programs", "*.exe"), ("All files", "*.*")]
+                if sys.platform.startswith("win")
+                else [("All files", "*.*")]
+            ),
         )
         if path:
             variable.set(os.path.normpath(path))

@@ -7,6 +7,7 @@ in game. Everything below it is real Tk widgets.
 
 import os
 import subprocess
+import sys
 import tkinter as tk
 
 import theme
@@ -163,7 +164,14 @@ class PlayPage(tk.Frame):
         try:
             os.startfile(path)  # noqa: S606 - opening the user's own log file
         except (OSError, AttributeError):
-            subprocess.Popen(["notepad.exe", path])
+            # os.startfile is Windows-only, so everywhere else lands here and
+            # notepad.exe was never going to work. Hand the file to whatever
+            # the desktop uses instead.
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            try:
+                subprocess.Popen([opener, path])
+            except OSError:
+                self.append(f"Could not open a viewer. The log is at {path}", "muted")
 
     # ------------------------------------------------------------------ state
 

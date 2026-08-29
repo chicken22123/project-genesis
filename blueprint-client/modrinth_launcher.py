@@ -140,10 +140,17 @@ def find_data_dir(explicit=""):
         ):
             return path
 
+    if _os_name() == "windows":
+        usual = "%APPDATA%\\ModrinthApp"
+    elif _os_name() == "osx":
+        usual = "~/Library/Application Support/ModrinthApp"
+    else:
+        usual = "~/.local/share/ModrinthApp"
+
     raise LaunchError(
         "Could not find the Modrinth App data folder. Set \"modrinth_data_dir\" in "
-        "blueprint_instance.json to the folder that contains meta\\ and profiles\\ "
-        "(normally %APPDATA%\\ModrinthApp)."
+        "blueprint_instance.json to the folder that contains meta and profiles "
+        f"(normally {usual})."
     )
 
 

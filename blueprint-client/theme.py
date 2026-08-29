@@ -30,11 +30,38 @@ STOP_RED_HOVER = "#ef6a6a"
 FAMILY = "Segoe UI"
 MONO_FAMILY = "Consolas"
 
+# Segoe UI and Consolas ship with Windows and exist nowhere else. Tk does not
+# complain about a family it cannot find - it quietly substitutes a serif that
+# looks nothing like the rest of the app - so each preferred family carries a
+# chain of stand-ins for Linux and macOS.
+_FAMILY_FALLBACKS = {
+    FAMILY: (FAMILY, "Inter", "DejaVu Sans", "Liberation Sans", "Arial", "Helvetica"),
+    MONO_FAMILY: (MONO_FAMILY, "DejaVu Sans Mono", "Liberation Mono", "Menlo",
+                  "Courier New", "Courier"),
+}
+
 _FONTS = {}
+_RESOLVED_FAMILIES = {}
+
+
+def _resolve_family(name):
+    """The first family in ``name``'s chain that is actually installed."""
+    if name not in _RESOLVED_FAMILIES:
+        chain = _FAMILY_FALLBACKS.get(name, (name,))
+        try:
+            installed = {family.lower() for family in tkfont.families()}
+        except tk.TclError:
+            # No Tk root yet; do not cache a guess made without one.
+            return chain[0]
+        _RESOLVED_FAMILIES[name] = next(
+            (option for option in chain if option.lower() in installed), chain[-1]
+        )
+    return _RESOLVED_FAMILIES[name]
 
 
 def font(size=10, weight="normal", family=FAMILY):
     """Cached font. Widgets and the canvas both redraw often enough to need it."""
+    family = _resolve_family(family)
     key = (family, size, weight)
     if key not in _FONTS:
         _FONTS[key] = tkfont.Font(family=family, size=size, weight=weight)
