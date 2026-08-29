@@ -16,11 +16,14 @@ import java.util.regex.Pattern;
  */
 public final class PriceText {
 	/** Above this a "price" is a parsing mistake, not a listing. */
-	public static final long MAX_PRICE = 1_000_000_000_000L;
+	public static final long MAX_PRICE = 1_000_000_000_000_000L;
 
 	// "Buy it now: 1,234,567 coins", "Price: $12.5k", "BIN 900".
 	private static final Pattern BUY_NOW = Pattern.compile(
-			"(?i)\\b(?:buy it now|buy now|buy|bin|price|cost)\\b\\D{0,12}?([0-9][0-9,. ]*[kmb]?)");
+			"(?i)\\b(?:buy it now|buy now|buy|bin|price|cost)\\b\\D{0,12}?([0-9][0-9,. ]*[kmbt]?)");
+	// A line that is simply an amount of money, which is how a lot of auction
+	// houses write it: "$1,250,000", "$4.2M".
+	private static final Pattern BARE_MONEY = Pattern.compile("\\$\\s*([0-9][0-9,. ]*[kmbtKMBT]?)");
 	// A running auction is not something we can flip: we would have to win it first.
 	private static final Pattern BIDDING = Pattern.compile("(?i)\\b(?:starting bid|highest bid|current bid|bidder)\\b");
 	private static final Pattern COUNT_PREFIX = Pattern.compile("^[0-9]+\\s*x\\s+");
@@ -41,13 +44,46 @@ public final class PriceText {
 	 * item are not the same market, and pricing one off the other is how a
 	 * flipper loses money.
 	 */
-	public static String itemKey(String displayName, List<String> lore) {
+	public static String itemKey(String displayName, List<String> lore, String identity) {
 		String name = normalize(displayName);
 		if (name.isEmpty()) {
 			return "";
 		}
+		StringBuilder key = new StringBuilder(name);
 		String rarity = rarity(lore);
-		return rarity.isEmpty() ? name : name + '#' + rarity;
+		if (!rarity.isEmpty()) {
+			key.append('#').append(rarity);
+		}
+		if (identity != null && !identity.isEmpty()) {
+			key.append('#').append(identity);
+		}
+		return key.toString();
+	}
+
+	/** The same, for an item with nothing to tell apart beyond its name. */
+	public static String itemKey(String displayName, List<String> lore) {
+		return itemKey(displayName, lore, "");
+	}
+
+	/**
+	 * A short, stable stamp for whatever makes an item itself.
+	 *
+	 * <p>Everything that changes what a thing is worth but not what it is
+	 * called - the enchantments on a sword, what is inside a shulker box - goes
+	 * in here. Pricing a Sharpness V sword off a plain one is how a flipper
+	 * hands its money to somebody else.
+	 */
+	public static String identity(String... parts) {
+		StringBuilder joined = new StringBuilder();
+		for (String part : parts) {
+			if (part != null && !part.isEmpty()) {
+				joined.append(part).append('|');
+			}
+		}
+		if (joined.length() == 0) {
+			return "";
+		}
+		return Integer.toHexString(joined.toString().hashCode());
 	}
 
 	/** Lower case, no counts, no decoration: "6x * Aspect of the End" becomes "aspect of the end". */
@@ -95,6 +131,20 @@ public final class PriceText {
 			}
 		}
 
+		// Lines that are nothing but money, with no wording at all.
+		for (String line : lore) {
+			if (binOnly && BIDDING.matcher(line).find()) {
+				continue;
+			}
+			Matcher matcher = BARE_MONEY.matcher(line);
+			while (matcher.find()) {
+				long amount = parseAmount(matcher.group(1));
+				if (amount > 0) {
+					return amount;
+				}
+			}
+		}
+
 		if (bidding && binOnly) {
 			return -1L;
 		}
@@ -124,10 +174,14 @@ public final class PriceText {
 			return -1L;
 		}
 
-		double multiplier = 1.0;
-		char last = value.charAt(value.length() - 1);
-		if (last == 'k' || last == 'm' || last == 'b') {
-			multiplier = last == 'k' ? 1_000.0 : last == 'm' ? 1_000_000.0 : 1_000_000_000.0;
+		double multiplier = switch (value.charAt(value.length() - 1)) {
+			case 'k' -> 1_000.0;
+			case 'm' -> 1_000_000.0;
+			case 'b' -> 1_000_000_000.0;
+			case 't' -> 1_000_000_000_000.0;
+			default -> 1.0;
+		};
+		if (multiplier > 1.0) {
 			value = value.substring(0, value.length() - 1);
 		}
 		if (value.endsWith(".")) {
@@ -162,9 +216,12 @@ public final class PriceText {
 		return false;
 	}
 
-	/** Coins, short enough for a HUD line: 1234567 becomes "1.23m". */
+	/** Money, short enough for a HUD line: 1234567 becomes "1.23m". */
 	public static String coins(long amount) {
 		long absolute = Math.abs(amount);
+		if (absolute >= 1_000_000_000_000L) {
+			return String.format(Locale.ROOT, "%.2ft", amount / 1_000_000_000_000.0);
+		}
 		if (absolute >= 1_000_000_000L) {
 			return String.format(Locale.ROOT, "%.2fb", amount / 1_000_000_000.0);
 		}
@@ -175,5 +232,10 @@ public final class PriceText {
 			return String.format(Locale.ROOT, "%.1fk", amount / 1_000.0);
 		}
 		return Long.toString(amount);
+	}
+
+	/** The same with the server's currency in front: "$1.23m". */
+	public static String money(long amount, String symbol) {
+		return amount < 0 ? "-" + symbol + coins(-amount) : symbol + coins(amount);
 	}
 }

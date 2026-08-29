@@ -50,12 +50,13 @@ public final class FlipMath {
 	/**
 	 * Price a listing against the market.
 	 *
-	 * <p>For a listing at {@code price} of an item the model values at {@code v},
-	 * with the next cheapest copy on the same page at {@code competitor}:
+	 * <p>The model prices one of a thing, so a listing of {@code count} of them,
+	 * asking {@code price} for the lot, against a model value of {@code v} each
+	 * and a next cheapest copy on the page at {@code competitor} each:
 	 *
 	 * <pre>
-	 *   sale   = min(v, competitor) x (1 - undercut)   what it can be sold for
-	 *   net    = sale x (1 - tax)                      what lands in the purse
+	 *   sale   = min(v, competitor) x count x (1 - undercut)   the asking price
+	 *   net    = sale x (1 - tax)                              what lands in the purse
 	 *   profit = net - price
 	 *   margin = profit / price
 	 *   score  = profit x confidence x (0.5 + 0.5 x supply)
@@ -68,8 +69,8 @@ public final class FlipMath {
 	 * those are the ones that sell on again quickly.
 	 */
 	public static Assessment assess(
-			long price, long competitor, MarketModel.Appraisal appraisal, FlipSettings settings) {
-		if (price <= 0 || !appraisal.isKnown()) {
+			long price, int count, long competitor, MarketModel.Appraisal appraisal, FlipSettings settings) {
+		if (price <= 0 || count <= 0 || !appraisal.isKnown()) {
 			return UNPRICED;
 		}
 		if (appraisal.samples() < settings.minSamples) {
@@ -85,7 +86,7 @@ public final class FlipMath {
 		// The cheapest copy still on sale caps what anyone will pay, however
 		// much history says the item is worth.
 		long reference = competitor > 0 ? Math.min(appraisal.fairValue(), competitor) : appraisal.fairValue();
-		long sale = Math.round(reference * (1.0 - settings.undercut));
+		long sale = Math.round(reference * (double) count * (1.0 - settings.undercut));
 		long net = Math.round(sale * (1.0 - settings.saleTax));
 		long profit = net - price;
 		double margin = profit / (double) price;
@@ -133,14 +134,14 @@ public final class FlipMath {
 	}
 
 	/** One line of arithmetic, for the overlay. */
-	public static String explain(String display, long price, Assessment assessment) {
+	public static String explain(String display, long price, Assessment assessment, String currency) {
 		return String.format(
 				Locale.ROOT,
 				"%s  %s -> %s  +%s (%.0f%%)",
 				display,
-				PriceText.coins(price),
-				PriceText.coins(assessment.sale()),
-				PriceText.coins(assessment.profit()),
+				PriceText.money(price, currency),
+				PriceText.money(assessment.sale(), currency),
+				PriceText.money(assessment.profit(), currency),
 				assessment.margin() * 100.0);
 	}
 }

@@ -86,7 +86,9 @@ public class FlipSettingsScreen extends Screen {
 
 	private static List<Row> moneyRows(FlipSettings settings) {
 		List<Row> rows = new ArrayList<>();
-		rows.add(number("Max per item", "Never click a listing dearer than this.",
+		rows.add(optional("Currency", "What the server puts in front of its money.",
+				() -> settings.currency, value -> settings.currency = value));
+		rows.add(number("Max per listing", "Never click a listing dearer than this. Stacks count as one listing.",
 				() -> settings.maxSpendPerItem, value -> settings.maxSpendPerItem = value));
 		rows.add(number("Session budget", "Stop once this much has been spent. 0 for no limit.",
 				() -> settings.sessionBudget, value -> settings.sessionBudget = value));

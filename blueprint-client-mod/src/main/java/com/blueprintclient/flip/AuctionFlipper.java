@@ -146,8 +146,8 @@ public final class AuctionFlipper extends Module {
 		enter(Stage.OPENING, System.currentTimeMillis());
 		nextActionAt = System.currentTimeMillis() + 500L;
 		status = "starting";
-		tell(client, "Flipper on - budget " + AuctionParser.coins(settings.sessionBudget)
-				+ ", up to " + AuctionParser.coins(settings.maxSpendPerItem) + " an item"
+		tell(client, "Flipper on - budget " + money(settings.sessionBudget)
+				+ ", up to " + money(settings.maxSpendPerItem) + " a listing"
 				+ (dryRun ? " (dry run: nothing will be bought)" : ""));
 	}
 
@@ -253,7 +253,7 @@ public final class AuctionFlipper extends Module {
 			lastPageSignature = signature;
 			market.noteScan();
 			for (AuctionScan.Listing listing : scan.listings()) {
-				market.observe(listing.key(), listing.price(), now);
+				market.observe(listing.key(), listing.unitPrice(), now);
 			}
 			scans++;
 		}
@@ -264,13 +264,13 @@ public final class AuctionFlipper extends Module {
 			pendingCountBefore = inventoryCount(client, best.key());
 			clickedSlots.clear();
 			click(client, handler, best.slotId());
-			status = "buying " + best.display() + " for " + AuctionParser.coins(best.price());
+			status = "buying " + best.display() + " for " + money(best.price());
 			tell(client, String.format(
 					Locale.ROOT,
 					"Buying %s at %s - worth about %s, margin %.0f%% (confidence %.0f%%)",
 					best.display(),
-					AuctionParser.coins(best.price()),
-					AuctionParser.coins(best.assessment().sale()),
+					money(best.price()),
+					money(best.assessment().sale()),
 					best.assessment().margin() * 100.0,
 					best.assessment().confidence() * 100.0));
 			enter(Stage.BUYING, now);
@@ -283,7 +283,7 @@ public final class AuctionFlipper extends Module {
 					Locale.ROOT,
 					"would buy %s (+%s)",
 					best.display(),
-					AuctionParser.coins(best.assessment().profit()));
+					money(best.assessment().profit()));
 		} else {
 			status = "watching - " + market.describe();
 		}
@@ -386,7 +386,7 @@ public final class AuctionFlipper extends Module {
 			flowOpened = false;
 			stepStart = now;
 			listingPrice = FlipMath.askingPrice(pending.price(), pending.assessment().sale(), settings);
-			tell(client, "Listing " + pending.display() + " at " + AuctionParser.coins(listingPrice));
+			tell(client, "Listing " + pending.display() + " at " + money(listingPrice));
 		}
 
 		if (!flow.isEmpty()) {
@@ -427,9 +427,8 @@ public final class AuctionFlipper extends Module {
 			return;
 		}
 
-		long price = FlipMath.askingPrice(pending.price(), pending.assessment().sale(), settings);
-		send(client, settings.sellCommandFor(price));
-		status = "listing " + pending.display() + " at " + AuctionParser.coins(price);
+		send(client, settings.sellCommandFor(listingPrice));
+		status = "listing " + pending.display() + " at " + money(listingPrice);
 		listedSignal = false;
 		enter(Stage.LISTED, now);
 		delay(now, 700);
@@ -477,7 +476,7 @@ public final class AuctionFlipper extends Module {
 			return;
 		}
 		if (settings.sessionBudget > 0 && spent >= settings.sessionBudget) {
-			stop(client, "session budget of " + AuctionParser.coins(settings.sessionBudget) + " is spent");
+			stop(client, "session budget of " + money(settings.sessionBudget) + " is spent");
 			return;
 		}
 		backToBrowsing(client, now);
@@ -508,8 +507,8 @@ public final class AuctionFlipper extends Module {
 
 		for (AuctionScan.Listing listing : scan.listings()) {
 			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
-			FlipMath.Assessment assessment =
-					FlipMath.assess(listing.price(), scan.competitor(listing.key()), appraisal, settings);
+			FlipMath.Assessment assessment = FlipMath.assess(
+					listing.price(), listing.count(), scan.competitor(listing.key()), appraisal, settings);
 			tally.merge(assessment.verdict(), 1, Integer::sum);
 			if (assessment.worthBuying()) {
 				found.add(new Candidate(
@@ -523,7 +522,8 @@ public final class AuctionFlipper extends Module {
 		report.add(summarise(scan.listingCount(), tally));
 		for (int i = 0; i < Math.min(REPORT_LINES, found.size()); i++) {
 			Candidate candidate = found.get(i);
-			report.add(FlipMath.explain(shorten(candidate.display()), candidate.price(), candidate.assessment()));
+			report.add(FlipMath.explain(
+					shorten(candidate.display()), candidate.price(), candidate.assessment(), settings.currency));
 		}
 
 		return found.isEmpty() ? null : found.get(0);
@@ -743,8 +743,8 @@ public final class AuctionFlipper extends Module {
 				stage.name().toLowerCase(Locale.ROOT),
 				scans,
 				flips,
-				AuctionParser.coins(spent),
-				AuctionParser.coins(expectedProfit),
+				money(spent),
+				money(expectedProfit),
 				dryRun ? " | dry run" : "");
 	}
 
@@ -780,6 +780,11 @@ public final class AuctionFlipper extends Module {
 			context.drawTextWithShadow(client.textRenderer, text, x + 4, line, HUD_COLOR);
 			line += client.textRenderer.fontHeight + 2;
 		}
+	}
+
+	/** An amount with the server's currency in front of it. */
+	private String money(long amount) {
+		return PriceText.money(amount, settings.currency);
 	}
 
 	private static String shorten(String display) {

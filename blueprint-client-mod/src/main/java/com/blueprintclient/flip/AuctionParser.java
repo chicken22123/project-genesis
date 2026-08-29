@@ -1,8 +1,10 @@
 package com.blueprintclient.flip;
 
+import net.minecraft.component.ComponentType;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.LoreComponent;
 import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -18,6 +20,24 @@ import java.util.List;
  * lives next door, where it can be tested.
  */
 public final class AuctionParser {
+	/**
+	 * What makes an item itself, beyond its name.
+	 *
+	 * <p>An auction house full of vanilla gear is full of items that look
+	 * identical in a list and are worth wildly different amounts: an enchanted
+	 * sword beside a plain one, a full shulker box beside an empty one. These
+	 * are the components that tell them apart. The lore is deliberately not one
+	 * of them - the auction house writes the price and the seller into it, so it
+	 * differs on every listing of the same thing.
+	 */
+	private static final ComponentType<?>[] IDENTITY = {
+		DataComponentTypes.ENCHANTMENTS,
+		DataComponentTypes.STORED_ENCHANTMENTS,
+		DataComponentTypes.POTION_CONTENTS,
+		DataComponentTypes.CONTAINER,
+		DataComponentTypes.CUSTOM_NAME,
+	};
+
 	private AuctionParser() {
 	}
 
@@ -43,7 +63,18 @@ public final class AuctionParser {
 
 	/** The name two listings have to share to be worth comparing. */
 	public static String itemKey(ItemStack stack) {
-		return PriceText.itemKey(plain(stack.getName()), lore(stack));
+		return PriceText.itemKey(plain(stack.getName()), lore(stack), identity(stack));
+	}
+
+	/** A stamp covering the item type and everything enchanted or stored on it. */
+	private static String identity(ItemStack stack) {
+		String[] parts = new String[IDENTITY.length + 1];
+		parts[0] = Registries.ITEM.getId(stack.getItem()).toString();
+		for (int i = 0; i < IDENTITY.length; i++) {
+			Object value = stack.get(IDENTITY[i]);
+			parts[i + 1] = value == null ? "" : value.toString();
+		}
+		return PriceText.identity(parts);
 	}
 
 	/** The buy it now price on a listing, or -1 when there is not one. */

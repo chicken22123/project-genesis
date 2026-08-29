@@ -20,8 +20,16 @@ import java.util.Map;
  * single pass over the slots.
  */
 public final class AuctionScan {
-	/** A fixed price item on the page. */
-	public record Listing(int slotId, String key, String display, long price) {
+	/**
+	 * A fixed price item on the page.
+	 *
+	 * <p>Auction houses sell stacks, so the price on the listing and the price
+	 * of the thing are not the same number. {@code price} is what the listing
+	 * costs; {@code unitPrice} is what one of them costs, and that is what the
+	 * market is measured in - otherwise a stack of sixty four looks like a
+	 * wildly overpriced single.
+	 */
+	public record Listing(int slotId, String key, String display, long price, int count, long unitPrice) {
 	}
 
 	private final Map<String, Listing> cheapest = new HashMap<>();
@@ -58,17 +66,21 @@ public final class AuctionScan {
 				continue;
 			}
 
+			int count = Math.max(1, stack.getCount());
+			long unitPrice = Math.max(1L, price / count);
+			String display = (count > 1 ? count + "x " : "") + AuctionParser.plain(stack.getName());
+
 			scan.listingCount++;
 			Listing best = scan.cheapest.get(key);
-			if (best == null || price < best.price()) {
+			if (best == null || unitPrice < best.unitPrice()) {
 				if (best != null) {
-					scan.runnerUp.put(key, best.price());
+					scan.runnerUp.put(key, best.unitPrice());
 				}
-				scan.cheapest.put(key, new Listing(slot.id, key, AuctionParser.plain(stack.getName()), price));
+				scan.cheapest.put(key, new Listing(slot.id, key, display, price, count, unitPrice));
 			} else {
 				Long second = scan.runnerUp.get(key);
-				if (second == null || price < second) {
-					scan.runnerUp.put(key, price);
+				if (second == null || unitPrice < second) {
+					scan.runnerUp.put(key, unitPrice);
 				}
 			}
 		}
@@ -90,8 +102,8 @@ public final class AuctionScan {
 	}
 
 	/**
-	 * The price the next seller of this item has to beat, or 0 when there is no
-	 * second copy on the page.
+	 * The price per item the next seller has to beat, or 0 when there is no
+	 * second copy of it on the page.
 	 */
 	public long competitor(String key) {
 		Long second = runnerUp.get(key);
@@ -110,7 +122,7 @@ public final class AuctionScan {
 	public long signature() {
 		long value = listingCount;
 		for (Listing listing : cheapest.values()) {
-			value += listing.key().hashCode() * 31L + listing.price();
+			value += listing.key().hashCode() * 31L + listing.price() + listing.count();
 		}
 		return value;
 	}

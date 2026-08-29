@@ -3,6 +3,11 @@
 A module that opens the auction house, works out what things are worth from the
 listings themselves, buys the ones priced below that, and relists them.
 
+The defaults are aimed at DonutSMP - `$` prices with `k`/`m`/`b`/`t` suffixes,
+`/ah` to browse, `/ah sell <price>` to list, an anvil that reloads the page -
+but every one of them is a setting, so any chest based auction house is a matter
+of adjusting the wording.
+
 Three toggles come with it, in the Blueprint menu (Right Shift by default):
 
 | Module | Category | What it does |
@@ -35,6 +40,23 @@ something the mod can soften.
 Nothing else is ever clicked. The flipper only touches a slot it has priced, or
 a slot whose item name is on one of the button lists in the config, so a screen
 it does not recognise leaves it idling rather than clicking around blindly.
+
+## Stacks and what counts as the same item
+
+Two things about a vanilla economy would quietly lose money if the flipper
+ignored them, so it does not.
+
+**Prices are per item, not per listing.** A stack of 64 at `$3.84m` and a single
+at `$60k` are the same price, and the model stores the second number. Profit is
+then worked out for the whole listing, so a stack is compared against a stack.
+
+**The name is not the item.** A Sharpness V netherite sword and a plain one look
+identical in a list; so do a full shulker box and an empty one. The key an item
+is filed under folds in what it actually is - the item type, its enchantments,
+stored enchantments on a book, potion contents, and what is inside a shulker -
+so those never get priced off each other. The lore is deliberately left out of
+that key, because the auction house writes the price and the seller into it, and
+it therefore differs on every listing of the same thing.
 
 ## The maths
 
@@ -137,7 +159,7 @@ they can be run without the game, the mappings or a Gradle build:
 blueprint-client-mod/tools/check-flip-math.sh
 ```
 
-It compiles five classes and runs 79 checks over them - what counts as a price,
+It compiles five classes and runs 93 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
 how a sell chain is read, and that nothing is bought before the market has been
 watched. Worth running
@@ -157,6 +179,7 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `flip.currency` | `$` | What the server puts in front of its money. |
 | `flip.browseCommand` | `ah` | Command that opens the browser, no slash. |
 | `flip.sellCommand` | `ah sell %price%` | Listing command; `%price%` is filled in. |
 | `flip.sellFlow` | empty | Menu chain for servers with no sell command; see above. |
@@ -167,23 +190,44 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | `flip.boughtMessages` | `you purchased,you bought,…` | Chat wording that means the purchase worked. |
 | `flip.buyFailedMessages` | `not enough coins,already been sold,…` | Wording that means it did not. |
 | `flip.listedMessages` | `auction started,you listed,…` | Wording that means the relist worked. |
-| `flip.maxSpendPerItem` | `1000000` | Never click a listing above this. |
-| `flip.sessionBudget` | `10000000` | Stop once this much has been spent. |
+| `flip.maxSpendPerItem` | `10000000` | Never click a listing above this. A stack is one listing. |
+| `flip.sessionBudget` | `100000000` | Stop once this much has been spent. |
 | `flip.stopAfterFlips` | `0` | Stop after this many flips; 0 means no limit. |
-| `flip.minProfit` | `5000` | Coins of profit needed to bother. |
+| `flip.minProfit` | `100000` | Profit needed to bother with a flip. |
 | `flip.minMargin` | `0.12` | Profit as a fraction of the buy price. |
 | `flip.minConfidence` | `0.35` | How sure the model has to be. |
 | `flip.minSamples` | `3` | Sightings before an item is priced at all. |
 | `flip.maxDispersion` | `0.35` | Refuse markets that disagree with themselves. |
 | `flip.suspiciousMargin` | `3.0` | Above this, demand `trustedSamples` first. |
 | `flip.trustedSamples` | `12` | Sightings that make a huge margin believable. |
-| `flip.saleTax` | `0.02` | The cut the auction house takes. |
+| `flip.saleTax` | `0.05` | The cut the auction house takes when something sells. |
 | `flip.undercut` | `0.03` | How far under the competition to list. |
 | `flip.binOnly` | `true` | Ignore items being bid on. |
 | `flip.actionDelayMs` | `400` | Pause between clicks; each one is a server round trip. |
 | `flip.actionJitterMs` | `250` | Random extra on top of every pause. |
 | `flip.refreshDelayMs` | `900` | Pause between page reloads. |
 | `flip.maxRefreshesPerMinute` | `40` | Hard cap on reloads. |
+
+## On DonutSMP
+
+The defaults are written for it, but three things are worth checking on the
+first run, with **Flip Dry Run** on so nothing can be bought while you look:
+
+1. **Does the panel appear over `/ah`?** If not, the window title is not one of
+   `flip.browseTitles` - put whatever the window is actually called in there.
+2. **Does it read the prices?** The panel says `N listings: ...`. If N is 0 the
+   price wording is wrong; DonutSMP writes plain `$` amounts, which the defaults
+   already read, but a changed layout would show up here first.
+3. **What is the sale tax?** `flip.saleTax` defaults to 5%. Set it to whatever
+   the server actually takes - too low and every flip is worth slightly less
+   than the maths thinks.
+
+Then watch the `would buy` lines for a while. They are what it would have spent
+money on; if they look like sensible trades, turn Dry Run off.
+
+Listing uses `/ah sell %price%` with the item in hand, which is what DonutSMP
+takes. If that ever changes to a menu, `flip.sellFlow` above covers it without
+touching the mod.
 
 ## When it stops by itself
 

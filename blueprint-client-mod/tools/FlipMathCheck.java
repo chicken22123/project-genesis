@@ -26,6 +26,7 @@ public final class FlipMathCheck {
 		priceModel();
 		modelPersistence();
 		scoring();
+		stacks();
 		asking();
 		sellChains();
 		warmUp();
@@ -45,6 +46,7 @@ public final class FlipMathCheck {
 		equal("thousands suffix", 12_500L, PriceText.parseAmount("12.5k"));
 		equal("millions with a currency sign", 3_200_000L, PriceText.parseAmount("$3.2M"));
 		equal("billions", 2_000_000_000L, PriceText.parseAmount("2b"));
+		equal("trillions", 1_500_000_000_000L, PriceText.parseAmount("1.5T"));
 		equal("spaces as separators", 1_500L, PriceText.parseAmount("1 500"));
 		equal("nonsense is refused", -1L, PriceText.parseAmount("lots"));
 		equal("zero is refused", -1L, PriceText.parseAmount("0"));
@@ -71,6 +73,14 @@ public final class FlipMathCheck {
 				"and read when they do not",
 				500L,
 				PriceText.buyItNowPrice(List.of("Current bid price: 500 coins"), false));
+		equal(
+				"a line that is just money",
+				1_250_000L,
+				PriceText.buyItNowPrice(List.of("Seller: Notch", "$1,250,000", "Time left: 4h"), true));
+		equal(
+				"money with a suffix",
+				4_200_000L,
+				PriceText.buyItNowPrice(List.of("$4.2M"), true));
 		equal("lore with no price at all", -1L, PriceText.buyItNowPrice(List.of("A very nice hat"), true));
 		equal("no lore at all", -1L, PriceText.buyItNowPrice(List.of(), true));
 		equal(
@@ -96,6 +106,15 @@ public final class FlipMathCheck {
 				PriceText.itemKey("Aspect of the End", List.of("RARE SWORD")),
 				PriceText.itemKey("Aspect of the End!!", List.of("RARE SWORD")));
 		equal("an unnamed item has no key", "", PriceText.itemKey("", List.of("RARE")));
+		equal(
+				"an enchanted sword is not a plain one",
+				false,
+				PriceText.itemKey("Netherite Sword", List.of(), PriceText.identity("sharpness 5"))
+						.equals(PriceText.itemKey("Netherite Sword", List.of(), PriceText.identity(""))));
+		equal(
+				"the same enchantments give the same key",
+				PriceText.itemKey("Netherite Sword", List.of(), PriceText.identity("minecraft:sword", "sharpness 5")),
+				PriceText.itemKey("Netherite Sword", List.of(), PriceText.identity("minecraft:sword", "sharpness 5")));
 		equal("lore with no rarity line", "wooden pickaxe", PriceText.itemKey("Wooden Pickaxe", List.of("Old")));
 	}
 
@@ -106,6 +125,9 @@ public final class FlipMathCheck {
 		equal("thousands", "45.3k", PriceText.coins(45_300L));
 		equal("millions", "1.23m", PriceText.coins(1_234_567L));
 		equal("billions", "2.50b", PriceText.coins(2_500_000_000L));
+		equal("trillions", "1.20t", PriceText.coins(1_200_000_000_000L));
+		equal("with the server's currency", "$4.20m", PriceText.money(4_200_000L, "$"));
+		equal("losses keep the sign in front", "-$3.0k", PriceText.money(-3_000L, "$"));
 		equal("losses read as losses", "-12.0k", PriceText.coins(-12_000L));
 	}
 
@@ -174,56 +196,80 @@ public final class FlipMathCheck {
 		FlipSettings settings = testSettings();
 		MarketModel.Appraisal solid = new MarketModel.Appraisal(100_000L, 0.05, 0.8, 10, 0.6);
 
-		FlipMath.Assessment bargain = FlipMath.assess(60_000L, 0L, solid, settings);
+		FlipMath.Assessment bargain = FlipMath.assess(60_000L, 1, 0L, solid, settings);
 		equal("a clear bargain is bought", FlipMath.Verdict.BUY, bargain.verdict());
 		equal("listed just under the market", 97_000L, bargain.sale());
 		equal("after the sale tax", 95_060L, bargain.net());
 		equal("profit is what lands in the purse", 35_060L, bargain.profit());
 		near("margin is profit over outlay", 0.584, bargain.margin(), 0.01);
 
-		FlipMath.Assessment undercut = FlipMath.assess(60_000L, 70_000L, solid, settings);
+		FlipMath.Assessment undercut = FlipMath.assess(60_000L, 1, 70_000L, solid, settings);
 		check("a cheaper rival caps the resale", undercut.sale() < bargain.sale());
 		equal("the rival sets the price", 67_900L, undercut.sale());
 
 		equal(
 				"fair prices are left alone",
 				FlipMath.Verdict.THIN_MARGIN,
-				FlipMath.assess(90_000L, 0L, solid, settings).verdict());
+				FlipMath.assess(90_000L, 1, 0L, solid, settings).verdict());
 		equal(
 				"a small win is not worth the clicks",
 				FlipMath.Verdict.THIN_PROFIT,
-				FlipMath.assess(94_000L, 0L, solid, settings).verdict());
+				FlipMath.assess(94_000L, 1, 0L, solid, settings).verdict());
 		equal(
 				"an item seen twice is not priced",
 				FlipMath.Verdict.TOO_FEW_SAMPLES,
-				FlipMath.assess(10L, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.9, 2, 0.5), settings).verdict());
+				FlipMath.assess(10L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.9, 2, 0.5), settings).verdict());
 		equal(
 				"an unsure model does not buy",
 				FlipMath.Verdict.LOW_CONFIDENCE,
-				FlipMath.assess(10L, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.2, 10, 0.5), settings).verdict());
+				FlipMath.assess(10L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.2, 10, 0.5), settings).verdict());
 		equal(
 				"an unsettled market does not buy",
 				FlipMath.Verdict.UNSTABLE,
-				FlipMath.assess(10L, 0L, new MarketModel.Appraisal(100_000L, 0.9, 0.8, 10, 0.5), settings).verdict());
+				FlipMath.assess(10L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.9, 0.8, 10, 0.5), settings).verdict());
 		equal(
 				"too good to be true, on too little evidence",
 				FlipMath.Verdict.TOO_GOOD,
-				FlipMath.assess(1_000L, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.8, 5, 0.5), settings)
+				FlipMath.assess(1_000L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.8, 5, 0.5), settings)
 						.verdict());
 		equal(
 				"the same bargain, once it is well evidenced",
 				FlipMath.Verdict.BUY,
-				FlipMath.assess(1_000L, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.8, 30, 0.5), settings)
+				FlipMath.assess(1_000L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.8, 30, 0.5), settings)
 						.verdict());
 		equal(
 				"an unpriced item is never bought",
 				FlipMath.Verdict.UNPRICED,
-				FlipMath.assess(1_000L, 0L, new MarketModel.Appraisal(0L, 1.0, 0.0, 0, 0.0), settings).verdict());
+				FlipMath.assess(1_000L, 1, 0L, new MarketModel.Appraisal(0L, 1.0, 0.0, 0, 0.0), settings).verdict());
 
-		FlipMath.Assessment sure = FlipMath.assess(60_000L, 0L, solid, settings);
+		FlipMath.Assessment sure = FlipMath.assess(60_000L, 1, 0L, solid, settings);
 		FlipMath.Assessment unsure =
-				FlipMath.assess(60_000L, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.4, 10, 0.6), settings);
+				FlipMath.assess(60_000L, 1, 0L, new MarketModel.Appraisal(100_000L, 0.05, 0.4, 10, 0.6), settings);
 		check("the same profit scores lower when the model is less sure", unsure.score() < sure.score());
+	}
+
+	private static void stacks() {
+		section("stacks");
+
+		FlipSettings settings = testSettings();
+		// The model prices one diamond block; the listing is a stack of 64.
+		MarketModel.Appraisal each = new MarketModel.Appraisal(100_000L, 0.05, 0.8, 10, 0.6);
+
+		FlipMath.Assessment single = FlipMath.assess(60_000L, 1, 0L, each, settings);
+		FlipMath.Assessment stack = FlipMath.assess(3_840_000L, 64, 0L, each, settings);
+		equal("a stack sells for a stack's worth", 6_208_000L, stack.sale());
+		equal("and the profit is on the whole stack", 2_243_840L, stack.profit());
+		near("with the same margin as one of them", single.margin(), stack.margin(), 0.001);
+		equal(
+				"a stack barely under the market is not worth the risk",
+				FlipMath.Verdict.THIN_MARGIN,
+				FlipMath.assess(5_800_000L, 64, 0L, each, settings).verdict());
+		equal(
+				"and one over the market is a loss",
+				FlipMath.Verdict.THIN_PROFIT,
+				FlipMath.assess(6_100_000L, 64, 0L, each, settings).verdict());
+		equal("a listing of nothing is not priced", FlipMath.Verdict.UNPRICED,
+				FlipMath.assess(1_000L, 0, 0L, each, settings).verdict());
 	}
 
 	private static void asking() {
@@ -282,7 +328,7 @@ public final class FlipMathCheck {
 			// A mispriced copy shows up on every page; only the well evidenced
 			// pages should act on it.
 			FlipMath.Assessment assessment =
-					FlipMath.assess(50_000L, 0L, model.appraise("aote#rare sword", now), settings);
+					FlipMath.assess(50_000L, 1, 0L, model.appraise("aote#rare sword", now), settings);
 			if (assessment.worthBuying()) {
 				bought++;
 			}

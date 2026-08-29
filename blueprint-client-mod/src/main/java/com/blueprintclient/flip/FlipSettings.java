@@ -31,6 +31,9 @@ public final class FlipSettings {
 	 */
 	public String sellFlow = "";
 
+	/** What the server puts in front of its money. */
+	public String currency = "$";
+
 	/** Screen titles that mean "this is the browser", lower case. */
 	public List<String> browseTitles = list("auction", "ah browser", "market");
 	/** Item names that buy or confirm a purchase, in the order they are usually met. */
@@ -41,18 +44,26 @@ public final class FlipSettings {
 	public List<String> refreshButtons = list("refresh", "reload", "update");
 
 	/** Chat wording that means the purchase went through, or did not. */
-	public List<String> boughtMessages = list("you purchased", "you bought", "you claimed", "purchased for");
-	public List<String> buyFailedMessages =
-			list("not enough coins", "cannot afford", "can't afford", "already been sold", "no longer available");
-	public List<String> listedMessages = list("auction started", "you listed", "put up for auction", "listed for");
+	public List<String> boughtMessages =
+			list("you purchased", "you bought", "you have bought", "purchased for", "you claimed");
+	public List<String> buyFailedMessages = list(
+			"not enough coins",
+			"not enough money",
+			"cannot afford",
+			"can't afford",
+			"already been sold",
+			"no longer available",
+			"has been sold");
+	public List<String> listedMessages =
+			list("auction started", "you listed", "you have listed", "put up for auction", "listed for", "now selling");
 
 	/** Money limits. Nothing outside these is ever clicked. */
-	public long maxSpendPerItem = 1_000_000L;
-	public long sessionBudget = 10_000_000L;
+	public long maxSpendPerItem = 10_000_000L;
+	public long sessionBudget = 100_000_000L;
 	public int stopAfterFlips = 0;
 
 	/** What counts as worth buying. */
-	public long minProfit = 5_000L;
+	public long minProfit = 100_000L;
 	public double minMargin = 0.12;
 	public double minConfidence = 0.35;
 	public int minSamples = 3;
@@ -62,7 +73,7 @@ public final class FlipSettings {
 	public int trustedSamples = 12;
 
 	/** The cut the auction house takes, and how far under the market we list. */
-	public double saleTax = 0.02;
+	public double saleTax = 0.05;
 	public double undercut = 0.03;
 
 	/** Only fixed price listings; a running auction cannot be bought outright. */
@@ -90,6 +101,7 @@ public final class FlipSettings {
 
 	public void load(Properties properties) {
 		browseCommand = string(properties, "flip.browseCommand", browseCommand);
+		currency = properties.getProperty("flip.currency", currency);
 		sellCommand = string(properties, "flip.sellCommand", sellCommand);
 		sellFlow = properties.getProperty("flip.sellFlow", sellFlow).trim();
 
@@ -125,6 +137,7 @@ public final class FlipSettings {
 
 	public void save(Properties properties) {
 		properties.setProperty("flip.browseCommand", browseCommand);
+		properties.setProperty("flip.currency", currency);
 		properties.setProperty("flip.sellCommand", sellCommand);
 		properties.setProperty("flip.sellFlow", sellFlow);
 
