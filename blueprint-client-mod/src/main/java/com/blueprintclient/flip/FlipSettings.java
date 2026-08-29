@@ -71,7 +71,15 @@ public final class FlipSettings {
 	public List<String> listedMessages =
 			list("auction started", "you listed", "you have listed", "put up for auction", "listed for", "now selling");
 
+	/** Items never to buy, whatever the maths says. A whole phrase, or a {@code *} glob. */
+	public String neverBuy = "dirt, cobblestone";
+	/** When set, the only items to buy. Empty means everything else is fair game. */
+	public String onlyBuy = "";
+	/** Per item price ranges: {@code diamond block: 100k-5m, elytra: 2m-}. The price of one. */
+	public String priceRules = "";
+
 	/** Money limits. Nothing outside these is ever clicked. */
+	public long minListingPrice = 0L;
 	public long maxSpendPerItem = 10_000_000L;
 	public long sessionBudget = 100_000_000L;
 	public int stopAfterFlips = 0;
@@ -109,6 +117,9 @@ public final class FlipSettings {
 	public int refreshDelayMs = 900;
 	public int maxRefreshesPerMinute = 40;
 
+	private ItemRules parsedRules;
+	private String parsedFrom;
+
 	private FlipSettings() {
 	}
 
@@ -138,6 +149,10 @@ public final class FlipSettings {
 		listedMessages = words(properties, "flip.listedMessages", listedMessages);
 		listFailedMessages = words(properties, "flip.listFailedMessages", listFailedMessages);
 
+		neverBuy = properties.getProperty("flip.neverBuy", neverBuy).trim();
+		onlyBuy = properties.getProperty("flip.onlyBuy", onlyBuy).trim();
+		priceRules = properties.getProperty("flip.priceRules", priceRules).trim();
+		minListingPrice = number(properties, "flip.minListingPrice", minListingPrice);
 		maxSpendPerItem = number(properties, "flip.maxSpendPerItem", maxSpendPerItem);
 		sessionBudget = number(properties, "flip.sessionBudget", sessionBudget);
 		stopAfterFlips = (int) number(properties, "flip.stopAfterFlips", stopAfterFlips);
@@ -180,6 +195,10 @@ public final class FlipSettings {
 		properties.setProperty("flip.listedMessages", String.join(",", listedMessages));
 		properties.setProperty("flip.listFailedMessages", String.join(",", listFailedMessages));
 
+		properties.setProperty("flip.neverBuy", neverBuy);
+		properties.setProperty("flip.onlyBuy", onlyBuy);
+		properties.setProperty("flip.priceRules", priceRules);
+		properties.setProperty("flip.minListingPrice", Long.toString(minListingPrice));
 		properties.setProperty("flip.maxSpendPerItem", Long.toString(maxSpendPerItem));
 		properties.setProperty("flip.sessionBudget", Long.toString(sessionBudget));
 		properties.setProperty("flip.stopAfterFlips", Integer.toString(stopAfterFlips));
@@ -205,6 +224,19 @@ public final class FlipSettings {
 		properties.setProperty("flip.actionJitterMs", Integer.toString(actionJitterMs));
 		properties.setProperty("flip.refreshDelayMs", Integer.toString(refreshDelayMs));
 		properties.setProperty("flip.maxRefreshesPerMinute", Integer.toString(maxRefreshesPerMinute));
+	}
+
+	/**
+	 * The parsed shopping rules, rebuilt only when one of the three settings
+	 * changes - they are read once per listing per page, which is often.
+	 */
+	public ItemRules rules() {
+		String signature = neverBuy + '\u0000' + onlyBuy + '\u0000' + priceRules;
+		if (parsedRules == null || !signature.equals(parsedFrom)) {
+			parsedRules = ItemRules.parse(neverBuy, onlyBuy, priceRules);
+			parsedFrom = signature;
+		}
+		return parsedRules;
 	}
 
 	/** The sell command with the asking price filled in. */

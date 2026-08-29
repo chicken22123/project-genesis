@@ -1,5 +1,6 @@
 import com.blueprintclient.flip.FlipMath;
 import com.blueprintclient.flip.FlipSettings;
+import com.blueprintclient.flip.ItemRules;
 import com.blueprintclient.flip.MarketModel;
 import com.blueprintclient.flip.PriceText;
 import com.blueprintclient.flip.SellFlow;
@@ -28,6 +29,8 @@ public final class FlipMathCheck {
 		priceModel();
 		evidence();
 		bait();
+		shopping();
+		shoppingLists();
 		modelPersistence();
 		scoring();
 		haircut();
@@ -222,7 +225,7 @@ public final class FlipMathCheck {
 		equal(
 				"one listing seen twenty times is not a market",
 				FlipMath.Verdict.TOO_FEW_SAMPLES,
-				FlipMath.assess(1_000L, 1, 2_000L, 2, planted.appraise("dirt", NOW), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 2_000L, 2, planted.appraise("dirt", NOW), settings).verdict());
 
 		// The same person, three listings, still going nowhere.
 		MarketModel oneSeller = new MarketModel();
@@ -232,7 +235,7 @@ public final class FlipMathCheck {
 		equal(
 				"nor is one person listing it three times",
 				FlipMath.Verdict.FEW_SELLERS,
-				FlipMath.assess(1_000L, 1, 2_000L, 3, oneSeller.appraise("dirt", NOW), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 2_000L, 3, oneSeller.appraise("dirt", NOW), settings).verdict());
 
 		// Two people, three listings, none of which ever move.
 		MarketModel stuck = new MarketModel();
@@ -245,7 +248,7 @@ public final class FlipMathCheck {
 		equal(
 				"but a price nothing ever moves at is not a price",
 				FlipMath.Verdict.NO_CHURN,
-				FlipMath.assess(1_000L, 1, 2_000L, 3, stale, settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 2_000L, 3, stale, settings).verdict());
 
 		// A real market that happens to have only one copy on the page: there is
 		// nothing to resell against right now.
@@ -256,7 +259,7 @@ public final class FlipMathCheck {
 		equal(
 				"an item with no competition has no established price",
 				FlipMath.Verdict.THIN_MARKET,
-				FlipMath.assess(40_000L, 1, 0L, 1, thin.appraise("netherite", NOW), settings).verdict());
+				FlipMath.assess("thing", 40_000L, 1, 0L, 1, thin.appraise("netherite", NOW), settings).verdict());
 
 		// And the honest version of the same trade: several sellers, listings
 		// coming and going, copies on the page to undercut.
@@ -265,10 +268,130 @@ public final class FlipMathCheck {
 		page(real, "netherite", new long[] {101_000L, 103_000L}, new String[] {"dan", "eve"});
 		page(real, "netherite", new long[] {99_000L, 104_000L}, new String[] {"fay", "gus"});
 		FlipMath.Assessment honest =
-				FlipMath.assess(40_000L, 1, 99_000L, 3, real.appraise("netherite", NOW), settings);
+				FlipMath.assess("thing", 40_000L, 1, 99_000L, 3, real.appraise("netherite", NOW), settings);
 		equal("a real market with a real gap is bought", FlipMath.Verdict.BUY, honest.verdict());
 		check("at a profit that has been cut for uncertainty", honest.profit() > 0);
 		check("and the cut is not nothing", honest.haircut() > 0.0);
+	}
+
+	/** The list of what you will and will not have bought on your behalf. */
+	private static void shopping() {
+		section("what to buy");
+
+		FlipSettings settings = testSettings();
+		MarketModel.Appraisal solid = appraisal(100_000L, 0.0, 0.8, 10, 1.0);
+
+		settings.neverBuy = "dirt, cobblestone";
+		equal(
+				"dirt is on the list",
+				FlipMath.Verdict.BLOCKED,
+				FlipMath.assess("Dirt", 1_000L, 1, 0L, 5, solid, settings).verdict());
+		equal(
+				"a stack of it is still dirt",
+				FlipMath.Verdict.BLOCKED,
+				FlipMath.assess("64x Dirt", 1_000L, 1, 0L, 5, solid, settings).verdict());
+		equal(
+				"a dirty sword is not dirt",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Dirty Sword", 60_000L, 1, 0L, 5, solid, settings).verdict());
+
+		settings.neverBuy = "* spawn egg";
+		equal(
+				"a glob catches the whole family",
+				FlipMath.Verdict.BLOCKED,
+				FlipMath.assess("Zombie Spawn Egg", 60_000L, 1, 0L, 5, solid, settings).verdict());
+		equal(
+				"and leaves everything else",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Zombie Head", 60_000L, 1, 0L, 5, solid, settings).verdict());
+
+		settings.neverBuy = "";
+		settings.onlyBuy = "netherite ingot, elytra";
+		equal(
+				"nothing off the only-buy list",
+				FlipMath.Verdict.NOT_WANTED,
+				FlipMath.assess("Diamond Block", 60_000L, 1, 0L, 5, solid, settings).verdict());
+		equal(
+				"and anything on it",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Elytra", 60_000L, 1, 0L, 5, solid, settings).verdict());
+
+		settings.onlyBuy = "";
+		settings.priceRules = "elytra: 2m-5m";
+		MarketModel.Appraisal dear = appraisal(10_000_000L, 0.0, 0.8, 10, 1.0);
+		equal(
+				"under the range it is left alone",
+				FlipMath.Verdict.OUT_OF_RANGE,
+				FlipMath.assess("Elytra", 1_000_000L, 1, 0L, 5, dear, settings).verdict());
+		equal(
+				"over the range too",
+				FlipMath.Verdict.OUT_OF_RANGE,
+				FlipMath.assess("Elytra", 6_000_000L, 1, 0L, 5, dear, settings).verdict());
+		equal(
+				"inside it, the maths gets its turn",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Elytra", 3_000_000L, 1, 0L, 5, dear, settings).verdict());
+		equal(
+				"and the range is the price of one, not of the stack",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("64x Elytra", 192_000_000L, 64, 0L, 5, dear, settings).verdict());
+		equal(
+				"an item with no rule is not affected",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Diamond Block", 60_000L, 1, 0L, 5, solid, settings).verdict());
+
+		settings.priceRules = "";
+		settings.minListingPrice = 500_000L;
+		equal(
+				"a listing under the floor",
+				FlipMath.Verdict.OUT_OF_RANGE,
+				FlipMath.assess("Diamond", 100_000L, 1, 0L, 5, solid, settings).verdict());
+		settings.minListingPrice = 0L;
+		settings.maxSpendPerItem = 1_000_000L;
+		equal(
+				"and one over the ceiling",
+				FlipMath.Verdict.OUT_OF_RANGE,
+				FlipMath.assess("Diamond", 2_000_000L, 1, 0L, 5, dear, settings).verdict());
+		settings.maxSpendPerItem = 0L;
+	}
+
+	/** The list syntax on its own. */
+	private static void shoppingLists() {
+		section("reading the lists");
+
+		ItemRules rules = ItemRules.parse("dirt, cobblestone", "", "diamond block: 100k-5m, elytra: 2m-, tnt: -20m");
+		equal("a name on the never list", true, rules.blocked("Dirt"));
+		equal("counts are not part of the name", true, rules.blocked("64x Cobblestone"));
+		equal("a longer name is not the same name", false, rules.blocked("Dirty Sword"));
+		equal("nor is a word inside another", false, rules.blocked("Cobblestone Wall Sign Thing")
+				&& !rules.blocked("Cobblestone Wall"));
+		equal("nothing is unwanted without an only-buy list", false, rules.unwanted("Anything"));
+
+		ItemRules only = ItemRules.parse("", "elytra", "");
+		equal("off the list", true, only.unwanted("Diamond"));
+		equal("on the list", false, only.unwanted("Elytra"));
+
+		equal("a low and a high", true, rules.rangeFor("Diamond Block").allows(1_000_000L));
+		equal("below the low", false, rules.rangeFor("Diamond Block").allows(50_000L));
+		equal("above the high", false, rules.rangeFor("Diamond Block").allows(6_000_000L));
+		equal("an open top", true, rules.rangeFor("Elytra").allows(900_000_000L));
+		equal("but not an open bottom", false, rules.rangeFor("Elytra").allows(1_000_000L));
+		equal("an open bottom", true, rules.rangeFor("TNT").allows(5L));
+		equal("with a closed top", false, rules.rangeFor("TNT").allows(21_000_000L));
+		equal("no rule for an item nobody mentioned", null, rules.rangeFor("Bread"));
+
+		ItemRules bare = ItemRules.parse("", "", "bread: 5k");
+		equal("a single number is a ceiling", true, bare.rangeFor("Bread").allows(4_000L));
+		equal("and only a ceiling", false, bare.rangeFor("Bread").allows(6_000L));
+
+		equal("nothing set is no rules at all", true, ItemRules.parse("", "", "").isEmpty());
+		equal("unreadable entries are dropped", true, ItemRules.parse("", "", "bread, : , nonsense:").isEmpty());
+
+		ItemRules globs = ItemRules.parse("* spawn egg, shulker*, *sword*", "", "");
+		equal("a star at the front", true, globs.blocked("Zombie Spawn Egg"));
+		equal("a star at the end", true, globs.blocked("Shulker Box"));
+		equal("stars at both ends", true, globs.blocked("A Very Sharp Sword Indeed"));
+		equal("and no false friends", false, globs.blocked("Spawn Egg Recipe Book") && globs.blocked("Bread"));
 	}
 
 	private static void modelPersistence() throws Exception {
@@ -303,55 +426,55 @@ public final class FlipMathCheck {
 		FlipSettings settings = testSettings();
 		MarketModel.Appraisal solid = appraisal(100_000L, 0.0, 0.8, 10, 1.0);
 
-		FlipMath.Assessment bargain = FlipMath.assess(60_000L, 1, 0L, 5, solid, settings);
+		FlipMath.Assessment bargain = FlipMath.assess("thing", 60_000L, 1, 0L, 5, solid, settings);
 		equal("a clear bargain is bought", FlipMath.Verdict.BUY, bargain.verdict());
 		equal("listed just under the market", 97_000L, bargain.sale());
 		equal("after the sale tax", 95_060L, bargain.net());
 		equal("profit is what lands in the purse", 35_060L, bargain.profit());
 		near("margin is profit over outlay", 0.584, bargain.margin(), 0.01);
 
-		FlipMath.Assessment undercut = FlipMath.assess(60_000L, 1, 70_000L, 5, solid, settings);
+		FlipMath.Assessment undercut = FlipMath.assess("thing", 60_000L, 1, 70_000L, 5, solid, settings);
 		check("a cheaper rival caps the resale", undercut.sale() < bargain.sale());
 		equal("the rival sets the price", 67_900L, undercut.sale());
 
 		equal(
 				"fair prices are left alone",
 				FlipMath.Verdict.THIN_MARGIN,
-				FlipMath.assess(90_000L, 1, 0L, 5, solid, settings).verdict());
+				FlipMath.assess("thing", 90_000L, 1, 0L, 5, solid, settings).verdict());
 		equal(
 				"a small win is not worth the clicks",
 				FlipMath.Verdict.THIN_PROFIT,
-				FlipMath.assess(94_000L, 1, 0L, 5, solid, settings).verdict());
+				FlipMath.assess("thing", 94_000L, 1, 0L, 5, solid, settings).verdict());
 		equal(
 				"an item seen twice is not priced",
 				FlipMath.Verdict.TOO_FEW_SAMPLES,
-				FlipMath.assess(10L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.9, 2, 1.0), settings).verdict());
+				FlipMath.assess("thing", 10L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.9, 2, 1.0), settings).verdict());
 		equal(
 				"an unsure model does not buy",
 				FlipMath.Verdict.LOW_CONFIDENCE,
-				FlipMath.assess(10L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.2, 10, 1.0), settings).verdict());
+				FlipMath.assess("thing", 10L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.2, 10, 1.0), settings).verdict());
 		equal(
 				"an unsettled market does not buy",
 				FlipMath.Verdict.UNSTABLE,
-				FlipMath.assess(10L, 1, 0L, 5, appraisal(100_000L, 0.9, 0.8, 10, 1.0), settings).verdict());
+				FlipMath.assess("thing", 10L, 1, 0L, 5, appraisal(100_000L, 0.9, 0.8, 10, 1.0), settings).verdict());
 		equal(
 				"too good to be true, on too little evidence",
 				FlipMath.Verdict.TOO_GOOD,
-				FlipMath.assess(1_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 5, 1.0), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 5, 1.0), settings).verdict());
 		equal(
 				"the same bargain, once it is well evidenced",
 				FlipMath.Verdict.BUY,
-				FlipMath.assess(1_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 30, 1.0), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 30, 1.0), settings).verdict());
 		equal(
 				"an unpriced item is never bought",
 				FlipMath.Verdict.UNPRICED,
-				FlipMath.assess(1_000L, 1, 0L, 5, appraisal(0L, 1.0, 0.0, 0, 0.0), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 0L, 5, appraisal(0L, 1.0, 0.0, 0, 0.0), settings).verdict());
 
 		settings.minUnitValue = 50_000L;
 		equal(
 				"cheap tat is beneath the flipper",
 				FlipMath.Verdict.TOO_CHEAP,
-				FlipMath.assess(1_000L, 1, 0L, 5, appraisal(10_000L, 0.0, 0.8, 30, 1.0), settings).verdict());
+				FlipMath.assess("thing", 1_000L, 1, 0L, 5, appraisal(10_000L, 0.0, 0.8, 30, 1.0), settings).verdict());
 		settings.minUnitValue = 0L;
 
 		// A server that does not say who is selling: distinct listings have to
@@ -360,17 +483,17 @@ public final class FlipMathCheck {
 		equal(
 				"without sellers, twice the listings are wanted",
 				FlipMath.Verdict.TOO_FEW_SAMPLES,
-				FlipMath.assess(60_000L, 1, 0L, 5, anonymous, settings).verdict());
+				FlipMath.assess("thing", 60_000L, 1, 0L, 5, anonymous, settings).verdict());
 		equal(
 				"and that is enough on its own",
 				FlipMath.Verdict.BUY,
-				FlipMath.assess(60_000L, 1, 0L, 5, new MarketModel.Appraisal(100_000L, 0.0, 0.8, 6, 0.6, 0, 1.0),
+				FlipMath.assess("thing", 60_000L, 1, 0L, 5, new MarketModel.Appraisal(100_000L, 0.0, 0.8, 6, 0.6, 0, 1.0),
 								settings)
 						.verdict());
 
-		FlipMath.Assessment sure = FlipMath.assess(60_000L, 1, 0L, 5, solid, settings);
+		FlipMath.Assessment sure = FlipMath.assess("thing", 60_000L, 1, 0L, 5, solid, settings);
 		FlipMath.Assessment unsure =
-				FlipMath.assess(60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.4, 10, 1.0), settings);
+				FlipMath.assess("thing", 60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.4, 10, 1.0), settings);
 		check("the same profit scores lower when the model is less sure", unsure.score() < sure.score());
 	}
 
@@ -379,11 +502,11 @@ public final class FlipMathCheck {
 		section("cutting the estimate");
 
 		FlipSettings settings = testSettings();
-		FlipMath.Assessment busy = FlipMath.assess(60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings);
+		FlipMath.Assessment busy = FlipMath.assess("thing", 60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings);
 		FlipMath.Assessment sluggish =
-				FlipMath.assess(60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 0.2), settings);
+				FlipMath.assess("thing", 60_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 0.2), settings);
 		FlipMath.Assessment messy =
-				FlipMath.assess(60_000L, 1, 0L, 5, appraisal(100_000L, 0.2, 0.8, 10, 1.0), settings);
+				FlipMath.assess("thing", 60_000L, 1, 0L, 5, appraisal(100_000L, 0.2, 0.8, 10, 1.0), settings);
 
 		near("a busy, tight market is taken at face value", 0.0, busy.haircut(), 0.001);
 		near("a market that barely moves is cut", 0.2, sluggish.haircut(), 0.001);
@@ -396,11 +519,11 @@ public final class FlipMathCheck {
 		equal(
 				"a thin trade survives in a market that moves",
 				FlipMath.Verdict.BUY,
-				FlipMath.assess(70_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings).verdict());
+				FlipMath.assess("thing", 70_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings).verdict());
 		equal(
 				"and is refused in one that does not",
 				FlipMath.Verdict.THIN_MARGIN,
-				FlipMath.assess(70_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 0.2), settings).verdict());
+				FlipMath.assess("thing", 70_000L, 1, 0L, 5, appraisal(100_000L, 0.0, 0.8, 10, 0.2), settings).verdict());
 	}
 
 	private static void stacks() {
@@ -410,23 +533,23 @@ public final class FlipMathCheck {
 		// The model prices one diamond block; the listing is a stack of 64.
 		MarketModel.Appraisal each = appraisal(100_000L, 0.0, 0.8, 10, 1.0);
 
-		FlipMath.Assessment single = FlipMath.assess(60_000L, 1, 0L, 5, each, settings);
-		FlipMath.Assessment stack = FlipMath.assess(3_840_000L, 64, 0L, 5, each, settings);
+		FlipMath.Assessment single = FlipMath.assess("thing", 60_000L, 1, 0L, 5, each, settings);
+		FlipMath.Assessment stack = FlipMath.assess("thing", 3_840_000L, 64, 0L, 5, each, settings);
 		equal("a stack sells for a stack's worth", 6_208_000L, stack.sale());
 		equal("and the profit is on the whole stack", 2_243_840L, stack.profit());
 		near("with the same margin as one of them", single.margin(), stack.margin(), 0.001);
 		equal(
 				"a stack barely under the market is not worth the risk",
 				FlipMath.Verdict.THIN_MARGIN,
-				FlipMath.assess(5_800_000L, 64, 0L, 5, each, settings).verdict());
+				FlipMath.assess("thing", 5_800_000L, 64, 0L, 5, each, settings).verdict());
 		equal(
 				"and one over the market is a loss",
 				FlipMath.Verdict.THIN_PROFIT,
-				FlipMath.assess(6_100_000L, 64, 0L, 5, each, settings).verdict());
+				FlipMath.assess("thing", 6_100_000L, 64, 0L, 5, each, settings).verdict());
 		equal(
 				"a listing of nothing is not priced",
 				FlipMath.Verdict.UNPRICED,
-				FlipMath.assess(1_000L, 0, 0L, 5, each, settings).verdict());
+				FlipMath.assess("thing", 1_000L, 0, 0L, 5, each, settings).verdict());
 	}
 
 	private static void asking() {
@@ -502,7 +625,7 @@ public final class FlipMathCheck {
 			// them: only the well evidenced pages should act on it.
 			page(model, "aote", new long[] {100_000L}, new String[] {sellers[page - 1]});
 			FlipMath.Assessment assessment =
-					FlipMath.assess(50_000L, 1, 0L, 3, model.appraise("aote", NOW), settings);
+					FlipMath.assess("thing", 50_000L, 1, 0L, 3, model.appraise("aote", NOW), settings);
 			if (assessment.worthBuying()) {
 				bought++;
 			}
@@ -536,6 +659,12 @@ public final class FlipMathCheck {
 
 	private static FlipSettings testSettings() {
 		FlipSettings settings = FlipSettings.get();
+		settings.neverBuy = "";
+		settings.onlyBuy = "";
+		settings.priceRules = "";
+		settings.minListingPrice = 0L;
+		// Zero is no ceiling; the checks that care set their own.
+		settings.maxSpendPerItem = 0L;
 		settings.minProfit = 5_000L;
 		settings.minMargin = 0.12;
 		settings.minConfidence = 0.35;
@@ -569,7 +698,7 @@ public final class FlipMathCheck {
 
 	private static void equal(String what, Object expected, Object actual) {
 		checks++;
-		if (expected.equals(actual)) {
+		if (java.util.Objects.equals(expected, actual)) {
 			System.out.println("  ok    " + what);
 		} else {
 			failures++;

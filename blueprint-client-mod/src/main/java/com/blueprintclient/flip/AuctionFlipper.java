@@ -583,6 +583,7 @@ public final class AuctionFlipper extends Module {
 		for (AuctionScan.Listing listing : scan.listings()) {
 			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
 			FlipMath.Assessment assessment = FlipMath.assess(
+					listing.display(),
 					listing.price(),
 					listing.count(),
 					scan.competitor(listing.key()),
@@ -621,7 +622,8 @@ public final class AuctionFlipper extends Module {
 	}
 
 	private boolean affordable(Candidate candidate) {
-		if (candidate.price() > settings.maxSpendPerItem) {
+		// Zero is no ceiling, the same as it means to the maths.
+		if (settings.maxSpendPerItem > 0 && candidate.price() > settings.maxSpendPerItem) {
 			return false;
 		}
 		return settings.sessionBudget <= 0 || spent + candidate.price() <= settings.sessionBudget;

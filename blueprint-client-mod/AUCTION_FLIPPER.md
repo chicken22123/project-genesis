@@ -61,6 +61,43 @@ so those never get priced off each other. The lore is deliberately left out of
 that key, because the auction house writes the price and the seller into it, and
 it therefore differs on every listing of the same thing.
 
+## What it is allowed to buy
+
+Before any of the maths runs, three lists decide whether an item is even a
+candidate. All of them are on the **WHAT TO BUY** column of the FLIPPER screen,
+and all of them are plain comma separated lists.
+
+```
+flip.neverBuy   = dirt, cobblestone, * spawn egg
+flip.onlyBuy    =
+flip.priceRules = diamond block: 100k-5m, elytra: 2m-, tnt: -20m
+```
+
+**Never buy** is the blacklist: those items are refused however good the numbers
+look. It ships with `dirt, cobblestone` in it, which you are welcome to clear.
+
+**Only buy** is the opposite: set it and nothing else is bought at all. Leave it
+empty and everything not blacklisted is fair game.
+
+Names are matched as **whole phrases**, so `dirt` matches "Dirt" and "64x Dirt"
+but not "Dirty Sword". A `*` stands for any run of characters, so `* spawn egg`
+catches every spawn egg, `shulker*` every shulker box, and `*sword*` anything
+with sword in the name.
+
+**Price rules** put a range on one item: `name: low-high`, either end optional,
+in whatever shorthand you like - `100k`, `2.5m`, `20m`. A single number is a
+ceiling, so `bread: 5k` means never pay more than five thousand for bread.
+
+> Price rules are **the price of one of the item**, not of the stack, so a rule
+> reads the same whether the listing is a single elytra or sixty four of them.
+> The two settings that cap a whole listing are `flip.minListingPrice` and
+> `flip.maxSpendPerItem`; set either to 0 to remove it.
+
+Anything refused this way shows up in the panel with the rest -
+`42 listings: 12 on the never-buy list, 3 outside its price range, 2 worth
+buying` - so a rule that is quietly eating everything is visible rather than
+mysterious.
+
 ## Why it will not buy your dirt
 
 The trap in an auction house is that **an asking price is not a sale price**.
@@ -221,10 +258,10 @@ they can be run without the game, the mappings or a Gradle build:
 blueprint-client-mod/tools/check-flip-math.sh
 ```
 
-It compiles five classes and runs 127 checks over them - what counts as a price,
+It compiles six classes and runs 164 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
-how a sell chain is read, and - the ones worth reading - a whole section of bait
-scenarios: a planted listing seen twenty times, one person listing the same
+how a sell chain is read, how the shopping lists are matched, and - the ones
+worth reading - a whole section of bait scenarios: a planted listing seen twenty times, one person listing the same
 thing three times, a price nothing ever moves at. None of them are bought. Worth running
 after changing any of the numbers.
 
@@ -254,7 +291,11 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | `flip.buyFailedMessages` | `not enough coins,already been sold,…` | Wording that means it did not. |
 | `flip.listedMessages` | `auction started,you listed,…` | Wording that means the relist worked. |
 | `flip.listFailedMessages` | `too many,invalid price,…` | Wording that means the sell command was refused. |
-| `flip.maxSpendPerItem` | `10000000` | Never click a listing above this. A stack is one listing. |
+| `flip.neverBuy` | `dirt, cobblestone` | Names never to buy. Whole phrases; `*` is a wildcard. |
+| `flip.onlyBuy` | empty | When set, the only names to buy. |
+| `flip.priceRules` | empty | Per item ranges, e.g. `elytra: 2m-5m`. The price of one. |
+| `flip.minListingPrice` | `0` | Ignore listings cheaper than this. 0 for no floor. |
+| `flip.maxSpendPerItem` | `10000000` | Never click a listing above this. A stack is one listing; 0 for no ceiling. |
 | `flip.sessionBudget` | `100000000` | Stop once this much has been spent. |
 | `flip.stopAfterFlips` | `0` | Stop after this many flips; 0 means no limit. |
 | `flip.minProfit` | `100000` | Profit needed to bother with a flip. |

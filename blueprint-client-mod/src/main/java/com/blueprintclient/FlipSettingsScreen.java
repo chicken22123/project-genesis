@@ -84,6 +84,7 @@ public class FlipSettingsScreen extends Screen {
 
 	private static List<Column> columnsFor(FlipSettings settings) {
 		List<Column> columns = new ArrayList<>();
+		columns.add(new Column("WHAT TO BUY", shoppingRows(settings)));
 		columns.add(new Column("EVIDENCE NEEDED", evidenceRows(settings)));
 		columns.add(new Column("MONEY", moneyRows(settings)));
 		columns.add(new Column("SERVER WORDING AND PACING", serverRows(settings)));
@@ -91,6 +92,24 @@ public class FlipSettingsScreen extends Screen {
 	}
 
 	// ------------------------------------------------------------------ rows
+
+	/** Which items the flipper is allowed to touch, and at what price. */
+	private static List<Row> shoppingRows(FlipSettings settings) {
+		List<Row> rows = new ArrayList<>();
+		rows.add(optional("Never buy", "Names never to buy. Whole words; * stands for anything.",
+				() -> settings.neverBuy, value -> settings.neverBuy = value));
+		rows.add(optional("Only buy", "When set, the only names to buy. Empty buys anything else.",
+				() -> settings.onlyBuy, value -> settings.onlyBuy = value));
+		rows.add(optional("Price rules", "Per item ranges: diamond block: 100k-5m. The price of one, not the stack.",
+				() -> settings.priceRules, value -> settings.priceRules = value));
+		rows.add(number("Min per listing", "Ignore listings cheaper than this. 0 for no floor.",
+				() -> settings.minListingPrice, value -> settings.minListingPrice = value));
+		rows.add(number("Max per listing", "Never click a listing dearer than this. Stacks count as one listing.",
+				() -> settings.maxSpendPerItem, value -> settings.maxSpendPerItem = value));
+		rows.add(number("Ignore under", "Ignore anything worth less than this each. 0 considers everything.",
+				() -> settings.minUnitValue, value -> settings.minUnitValue = value));
+		return rows;
+	}
 
 	/** What has to be true about an item before its price is believed at all. */
 	private static List<Row> evidenceRows(FlipSettings settings) {
@@ -113,8 +132,6 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.suspiciousMargin, value -> settings.suspiciousMargin = value));
 		rows.add(number("Trusted listings", "Listings that make a huge margin believable.",
 				() -> (long) settings.trustedSamples, value -> settings.trustedSamples = (int) value));
-		rows.add(number("Ignore under", "Ignore anything worth less than this each. 0 considers everything.",
-				() -> settings.minUnitValue, value -> settings.minUnitValue = value));
 		return rows;
 	}
 
@@ -122,8 +139,6 @@ public class FlipSettingsScreen extends Screen {
 		List<Row> rows = new ArrayList<>();
 		rows.add(optional("Currency", "What the server puts in front of its money.",
 				() -> settings.currency, value -> settings.currency = value));
-		rows.add(number("Max per listing", "Never click a listing dearer than this. Stacks count as one listing.",
-				() -> settings.maxSpendPerItem, value -> settings.maxSpendPerItem = value));
 		rows.add(number("Session budget", "Stop once this much has been spent. 0 for no limit.",
 				() -> settings.sessionBudget, value -> settings.sessionBudget = value));
 		rows.add(number("Stop after flips", "Stop after this many flips. 0 for no limit.",

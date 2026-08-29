@@ -20,6 +20,9 @@ public final class FlipMath {
 	/** Why a listing was or was not bought. */
 	public enum Verdict {
 		BUY("worth buying"),
+		BLOCKED("on the never-buy list"),
+		NOT_WANTED("not on the only-buy list"),
+		OUT_OF_RANGE("outside its price range"),
 		UNPRICED("not priced yet"),
 		TOO_FEW_SAMPLES("too few listings seen"),
 		FEW_SELLERS("only one seller"),
@@ -70,7 +73,10 @@ public final class FlipMath {
 	/**
 	 * Price a listing against the market.
 	 *
-	 * <p>The gates come first, and every one of them has to pass:
+	 * <p>The gates come first, and every one of them has to pass. The first two
+	 * are yours rather than the model's - an item on the never-buy list, or
+	 * priced outside the range you set for it, is refused before anything is
+	 * worked out at all. Then:
 	 *
 	 * <ul>
 	 *   <li>enough <b>distinct listings</b> of the item have been seen - the
@@ -106,13 +112,38 @@ public final class FlipMath {
 	 * tight spread barely gets touched.
 	 */
 	public static Assessment assess(
+			String name,
 			long price,
 			int count,
 			long competitor,
 			int depth,
 			MarketModel.Appraisal appraisal,
 			FlipSettings settings) {
-		if (price <= 0 || count <= 0 || !appraisal.isKnown()) {
+		// What you have said you want comes before what the numbers say. An
+		// item on the never-buy list is not bought however good it looks, and
+		// that is the point of the list.
+		ItemRules rules = settings.rules();
+		if (rules.blocked(name)) {
+			return refused(Verdict.BLOCKED, appraisal);
+		}
+		if (rules.unwanted(name)) {
+			return refused(Verdict.NOT_WANTED, appraisal);
+		}
+		if (price <= 0 || count <= 0) {
+			return UNPRICED;
+		}
+
+		long unitPrice = Math.max(1L, price / count);
+		if (price < settings.minListingPrice
+				|| (settings.maxSpendPerItem > 0 && price > settings.maxSpendPerItem)) {
+			return refused(Verdict.OUT_OF_RANGE, appraisal);
+		}
+		ItemRules.Range range = rules.rangeFor(name);
+		if (range != null && !range.allows(unitPrice)) {
+			return refused(Verdict.OUT_OF_RANGE, appraisal);
+		}
+
+		if (!appraisal.isKnown()) {
 			return UNPRICED;
 		}
 
