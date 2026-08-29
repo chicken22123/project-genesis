@@ -180,8 +180,12 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.listedMessages, value -> settings.listedMessages = value));
 		rows.add(words("Refused wording", "Chat wording that means the sell command was refused.",
 				() -> settings.listFailedMessages, value -> settings.listFailedMessages = value));
+		rows.add(toggle("Keep running", "Carry on after trouble instead of switching off. Leave on to run all day.",
+				() -> settings.keepRunning, value -> settings.keepRunning = value));
 		rows.add(number("Click delay", "Milliseconds between clicks; each one is a round trip.",
 				() -> (long) settings.actionDelayMs, value -> settings.actionDelayMs = (int) value));
+		rows.add(number("Buy delay", "Milliseconds between the clicks that buy something. Quicker is riskier.",
+				() -> (long) settings.buyDelayMs, value -> settings.buyDelayMs = (int) value));
 		rows.add(number("Click jitter", "Random milliseconds added to every pause.",
 				() -> (long) settings.actionJitterMs, value -> settings.actionJitterMs = (int) value));
 		rows.add(number("Reload delay", "Milliseconds between page reloads.",

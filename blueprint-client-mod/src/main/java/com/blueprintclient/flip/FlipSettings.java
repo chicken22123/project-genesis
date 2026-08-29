@@ -116,11 +116,22 @@ public final class FlipSettings {
 	/** Only fixed price listings; a running auction cannot be bought outright. */
 	public boolean binOnly = true;
 
+	/**
+	 * Keep going after trouble instead of switching off.
+	 *
+	 * <p>This is what makes it something that can be left running. Off, one
+	 * menu it cannot read ends the session; on, it says so and starts the loop
+	 * again a few seconds later.
+	 */
+	public boolean keepRunning = true;
+
 	/** Pacing, in milliseconds. Every click needs a round trip to the server. */
 	public int actionDelayMs = 400;
+	/** The buy is quicker than the rest of the loop: somebody else wants it too. */
+	public int buyDelayMs = 250;
 	public int actionJitterMs = 250;
-	public int refreshDelayMs = 900;
-	public int maxRefreshesPerMinute = 40;
+	public int refreshDelayMs = 1_000;
+	public int maxRefreshesPerMinute = 50;
 
 	private ItemRules parsedRules;
 	private String parsedFrom;
@@ -179,7 +190,9 @@ public final class FlipSettings {
 		undercut = decimal(properties, "flip.undercut", undercut);
 		binOnly = Boolean.parseBoolean(string(properties, "flip.binOnly", Boolean.toString(binOnly)));
 
+		keepRunning = Boolean.parseBoolean(string(properties, "flip.keepRunning", Boolean.toString(keepRunning)));
 		actionDelayMs = (int) number(properties, "flip.actionDelayMs", actionDelayMs);
+		buyDelayMs = (int) number(properties, "flip.buyDelayMs", buyDelayMs);
 		actionJitterMs = (int) number(properties, "flip.actionJitterMs", actionJitterMs);
 		refreshDelayMs = (int) number(properties, "flip.refreshDelayMs", refreshDelayMs);
 		maxRefreshesPerMinute = (int) number(properties, "flip.maxRefreshesPerMinute", maxRefreshesPerMinute);
@@ -225,7 +238,9 @@ public final class FlipSettings {
 		properties.setProperty("flip.undercut", decimal(undercut));
 		properties.setProperty("flip.binOnly", Boolean.toString(binOnly));
 
+		properties.setProperty("flip.keepRunning", Boolean.toString(keepRunning));
 		properties.setProperty("flip.actionDelayMs", Integer.toString(actionDelayMs));
+		properties.setProperty("flip.buyDelayMs", Integer.toString(buyDelayMs));
 		properties.setProperty("flip.actionJitterMs", Integer.toString(actionJitterMs));
 		properties.setProperty("flip.refreshDelayMs", Integer.toString(refreshDelayMs));
 		properties.setProperty("flip.maxRefreshesPerMinute", Integer.toString(maxRefreshesPerMinute));

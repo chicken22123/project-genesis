@@ -593,6 +593,11 @@ public final class FlipMathCheck {
 						.verdict());
 		check("with a session budget that allows more than one of them",
 				settings.sessionBudget > settings.maxSpendPerItem);
+		equal("and it keeps running by itself", true, settings.keepRunning);
+		check("buying faster than it browses", settings.buyDelayMs < settings.actionDelayMs);
+		check("but not so fast the server would call it spam", settings.buyDelayMs >= 100);
+		check("and reloading no harder than the delay allows",
+				settings.maxRefreshesPerMinute <= 60_000 / settings.refreshDelayMs);
 		equal(
 				"dirt is still dirt",
 				FlipMath.Verdict.BLOCKED,

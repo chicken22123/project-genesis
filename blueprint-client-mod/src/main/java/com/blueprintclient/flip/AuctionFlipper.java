@@ -65,6 +65,10 @@ public final class AuctionFlipper extends Module {
 	private static final long LIST_TIMEOUT_MS = 8_000L;
 	private static final long STEP_TIMEOUT_MS = 6_000L;
 	private static final int MAX_ERRORS = 5;
+	/** How long to wait after starting the loop over. */
+	private static final long RECOVERY_PAUSE_MS = 5_000L;
+	/** No step of the loop takes this long; if one has, something is wedged. */
+	private static final long STUCK_MS = 45_000L;
 	private static final int REPORT_LINES = 3;
 
 	/** A listing the maths approved of, and the arithmetic behind it. */
@@ -90,6 +94,10 @@ public final class AuctionFlipper extends Module {
 
 	private Candidate pending;
 	private int pendingCountBefore;
+	private String pauseReason;
+	private Object connection;
+	private long startedAt;
+	private int recoveries;
 	private SellFlow flow;
 	private int flowIndex;
 	private long stepStart;
@@ -145,6 +153,9 @@ public final class AuctionFlipper extends Module {
 		pending = null;
 		report.clear();
 		refreshTimes.clear();
+		startedAt = System.currentTimeMillis();
+		pauseReason = null;
+		recoveries = 0;
 		enter(Stage.OPENING, System.currentTimeMillis());
 		nextActionAt = System.currentTimeMillis() + 500L;
 		status = "starting";
@@ -174,6 +185,18 @@ public final class AuctionFlipper extends Module {
 		long now = System.currentTimeMillis();
 		market.maybeSave(now);
 
+		// A different connection is a different world, and a state machine
+		// halfway through buying something on a server we have left.
+		Object handler = client.getNetworkHandler();
+		if (handler != connection) {
+			connection = handler;
+			pending = null;
+			enter(Stage.OPENING, now);
+			nextActionAt = now + 3_000L;
+			status = "waiting for the world to settle";
+			return;
+		}
+
 		// A screen of our own, or any other menu, means the player is doing
 		// something else. Wait it out instead of counting it as a timeout.
 		if (client.currentScreen != null && !(client.currentScreen instanceof HandledScreen<?>)) {
@@ -183,6 +206,14 @@ public final class AuctionFlipper extends Module {
 		}
 
 		if (now < nextActionAt) {
+			return;
+		}
+
+		// Every step has its own timeout, but a step can only time out if it is
+		// being reached at all. This catches the rest: a menu that swallowed a
+		// click, a stage waiting on something that will never arrive.
+		if (stage != Stage.BROWSING && stage != Stage.STOPPED && now - stageStart > STUCK_MS) {
+			giveUp(client, "stuck " + stage.name().toLowerCase(Locale.ROOT) + " for too long");
 			return;
 		}
 
@@ -226,7 +257,7 @@ public final class AuctionFlipper extends Module {
 		// then try again, and give up rather than sit here typing forever.
 		if (now - stageStart > OPEN_TIMEOUT_MS) {
 			if (++errors > MAX_ERRORS) {
-				stop(client, "the auction house did not open - check flip.browseCommand");
+				giveUp(client, "the auction house did not open - check flip.browseCommand");
 				return;
 			}
 			stageStart = now;
@@ -264,12 +295,18 @@ public final class AuctionFlipper extends Module {
 			scans++;
 		}
 
-		Candidate best = evaluate(scan, now);
-		if (best != null && !dryRun && !inventoryHasRoom(client)) {
-			stop(client, "the inventory is full - nothing bought would have anywhere to go");
-			return;
+		// Checked every page, so the moment room is made or the budget is
+		// raised, buying picks straight back up.
+		if (!inventoryHasRoom(client)) {
+			pauseSpending(client, "the inventory is full");
+		} else if (settings.sessionBudget > 0 && spent >= settings.sessionBudget) {
+			pauseSpending(client, "the session budget of " + money(settings.sessionBudget) + " is spent");
+		} else {
+			resumeSpending(client);
 		}
-		if (best != null && !dryRun && affordable(best)) {
+
+		Candidate best = evaluate(scan, now);
+		if (best != null && !dryRun && pauseReason == null && affordable(best)) {
 			pending = best;
 			pendingCountBefore = inventoryCount(client, best.key());
 			clickedSlots.clear();
@@ -290,7 +327,7 @@ public final class AuctionFlipper extends Module {
 					evidence.churn() * 100.0,
 					best.assessment().haircut() * 100.0));
 			enter(Stage.BUYING, now);
-			delay(now, settings.actionDelayMs);
+			delay(now, settings.buyDelayMs);
 			return;
 		}
 
@@ -371,7 +408,9 @@ public final class AuctionFlipper extends Module {
 		int button = findButton(handler, settings.buyButtons);
 		if (button >= 0 && clickOnce(client, handler, button)) {
 			status = "confirming the purchase";
-			delay(now, settings.actionDelayMs);
+			// Quicker than the rest of the loop: somebody else is looking at
+			// this listing too.
+			delay(now, settings.buyDelayMs);
 			return;
 		}
 
@@ -382,7 +421,7 @@ public final class AuctionFlipper extends Module {
 			errors++;
 			pending = null;
 			if (errors > MAX_ERRORS) {
-				stop(client, "could not work out the buy screen - check flip.buyButtons");
+				giveUp(client, "could not work out the buy screen - check flip.buyButtons");
 				return;
 			}
 			backToBrowsing(client, now);
@@ -436,7 +475,7 @@ public final class AuctionFlipper extends Module {
 			errors++;
 			pending = null;
 			if (errors > MAX_ERRORS) {
-				stop(client, "the bought items cannot be put in hand to be sold");
+				giveUp(client, "the bought items cannot be put in hand to be sold");
 				return;
 			}
 			backToBrowsing(client, now);
@@ -476,6 +515,122 @@ public final class AuctionFlipper extends Module {
 		delay(now, 700);
 	}
 
+	/**
+	 * The harder case: walk the menus the server makes you walk.
+	 *
+	 * <p>One step per action, each with its own timeout, so a chain that stops
+	 * matching the server says which step it got stuck on rather than clicking
+	 * away at whatever happens to be open.
+	 */
+	private void walkSellFlow(MinecraftClient client, long now) {
+		if (!flowOpened) {
+			// The chain starts inside the auction house, so open it first.
+			if (isBrowser(client)) {
+				flowOpened = true;
+				stepStart = now;
+				delay(now, settings.actionDelayMs);
+				return;
+			}
+			if (client.currentScreen != null) {
+				client.player.closeHandledScreen();
+				delay(now, 300);
+				return;
+			}
+			if (!commandSent) {
+				send(client, settings.browseCommand);
+				commandSent = true;
+				status = "opening the auction house to relist";
+				delay(now, 700);
+				return;
+			}
+			if (now - stageStart > OPEN_TIMEOUT_MS) {
+				abortSellFlow(client, now, "open the auction house");
+			}
+			return;
+		}
+
+		if (flowIndex >= flow.size()) {
+			listedSignal = false;
+			enter(Stage.LISTED, now);
+			delay(now, settings.actionDelayMs);
+			return;
+		}
+
+		SellFlow.Step step = flow.step(flowIndex);
+		status = String.format(
+				Locale.ROOT, "relisting, step %d of %d: %s", flowIndex + 1, flow.size(), step.describe());
+
+		switch (step.kind()) {
+			case WAIT -> advance(now, (int) step.millis());
+			case PRICE -> {
+				String message = SellFlow.priceMessage(step, listingPrice);
+				if (message.startsWith("/")) {
+					send(client, message);
+				} else {
+					sendChat(client, message);
+				}
+				advance(now, settings.actionDelayMs);
+			}
+			case BUTTON -> {
+				ScreenHandler handler = container(client);
+				if (handler != null) {
+					int slot = findButton(handler, List.of(step.argument()));
+					if (slot >= 0 && clickOnce(client, handler, slot)) {
+						advance(now, settings.actionDelayMs);
+						return;
+					}
+				}
+				if (now - stepStart > STEP_TIMEOUT_MS) {
+					abortSellFlow(client, now, step.describe());
+				}
+			}
+			case ITEM -> {
+				ScreenHandler handler = container(client);
+				if (handler != null) {
+					int slot = carriedSlot(client, handler, pending.key());
+					if (slot >= 0 && clickOnce(client, handler, slot)) {
+						advance(now, settings.actionDelayMs);
+						return;
+					}
+				}
+				if (now - stepStart > STEP_TIMEOUT_MS) {
+					abortSellFlow(client, now, step.describe());
+				}
+			}
+		}
+	}
+
+	private void advance(long now, int pause) {
+		flowIndex++;
+		stepStart = now;
+		delay(now, pause);
+	}
+
+	private void abortSellFlow(MinecraftClient client, long now, String what) {
+		tell(client, "Could not " + what + " while relisting - check flip.sellFlow");
+		errors++;
+		pending = null;
+		if (errors > MAX_ERRORS) {
+			giveUp(client, "the relist chain does not match this server");
+			return;
+		}
+		backToBrowsing(client, now);
+	}
+
+	/** The bought item in the inventory half of an open menu, or -1. */
+	private int carriedSlot(MinecraftClient client, ScreenHandler handler, String key) {
+		for (Slot slot : handler.slots) {
+			if (!(slot.inventory instanceof PlayerInventory)) {
+				continue;
+			}
+			ItemStack stack = slot.getStack();
+			if (!stack.isEmpty() && key.equals(AuctionParser.itemKey(stack))) {
+				return slot.id;
+			}
+		}
+		return -1;
+	}
+
 	/** Confirm the listing if the server asks, then go back to browsing. */
 	private void listed(MinecraftClient client, long now) {
 		if (listFailedSignal) {
@@ -486,7 +641,7 @@ public final class AuctionFlipper extends Module {
 			errors++;
 			pending = null;
 			if (errors > MAX_ERRORS) {
-				stop(client, "the server keeps refusing to list what is bought");
+				giveUp(client, "the server keeps refusing to list what is bought");
 				return;
 			}
 			backToBrowsing(client, now);
@@ -528,7 +683,7 @@ public final class AuctionFlipper extends Module {
 			errors++;
 			pending = null;
 			if (errors > MAX_ERRORS) {
-				stop(client, "nothing bought is getting listed - check flip.sellCommand");
+				giveUp(client, "nothing bought is getting listed - check flip.sellCommand");
 				return;
 			}
 			backToBrowsing(client, now);
@@ -548,10 +703,6 @@ public final class AuctionFlipper extends Module {
 
 		if (settings.stopAfterFlips > 0 && flips >= settings.stopAfterFlips) {
 			stop(client, "done " + flips + " flips");
-			return;
-		}
-		if (settings.sessionBudget > 0 && spent >= settings.sessionBudget) {
-			stop(client, "session budget of " + money(settings.sessionBudget) + " is spent");
 			return;
 		}
 		backToBrowsing(client, now);
@@ -721,6 +872,53 @@ public final class AuctionFlipper extends Module {
 		nextActionAt = now + base + random.nextInt(Math.max(1, settings.actionJitterMs));
 	}
 
+	/**
+	 * Something went wrong that trying harder will not fix.
+	 *
+	 * <p>Left running all day, switching itself off over one confusing menu is
+	 * the worst thing it could do: the next twelve hours are then spent doing
+	 * nothing at all. So unless {@code flip.keepRunning} is off, it says what
+	 * happened, waits a few seconds and starts the loop again. Only a limit you
+	 * set yourself actually stops it.
+	 */
+	private void giveUp(MinecraftClient client, String reason) {
+		if (!settings.keepRunning) {
+			stop(client, reason);
+			return;
+		}
+		recoveries++;
+		errors = 0;
+		pending = null;
+		status = "recovering: " + reason;
+		tell(client, "Flipper hit trouble (" + reason + ") - starting the loop again");
+		long now = System.currentTimeMillis();
+		enter(Stage.OPENING, now);
+		nextActionAt = now + RECOVERY_PAUSE_MS;
+	}
+
+	/**
+	 * Stop spending without stopping watching.
+	 *
+	 * <p>A full inventory or a spent budget is a reason not to buy, not a reason
+	 * to stop reading the auction house: every page read while paused is more
+	 * evidence for when buying starts again.
+	 */
+	private void pauseSpending(MinecraftClient client, String reason) {
+		if (reason.equals(pauseReason)) {
+			return;
+		}
+		pauseReason = reason;
+		tell(client, "Not buying for now - " + reason + " (still watching the market)");
+	}
+
+	private void resumeSpending(MinecraftClient client) {
+		if (pauseReason == null) {
+			return;
+		}
+		tell(client, "Buying again");
+		pauseReason = null;
+	}
+
 	private void stop(MinecraftClient client, String reason) {
 		stage = Stage.STOPPED;
 		status = "stopped: " + reason;
@@ -836,13 +1034,34 @@ public final class AuctionFlipper extends Module {
 	public String summary() {
 		return String.format(
 				Locale.ROOT,
-				"Flip: %s | %d scans | %d flips | spent %s | est %s%s",
+				"Flip: %s | up %s | %d scans | %d flips (%.1f/h) | spent %s | est %s%s%s",
 				stage.name().toLowerCase(Locale.ROOT),
+				uptime(),
 				scans,
 				flips,
+				flipsPerHour(),
 				money(spent),
 				money(expectedProfit),
+				pauseReason == null ? "" : " | paused: " + pauseReason,
 				dryRun ? " | dry run" : "");
+	}
+
+	private String uptime() {
+		long seconds = startedAt <= 0 ? 0L : (System.currentTimeMillis() - startedAt) / 1000L;
+		if (seconds < 3600L) {
+			return seconds / 60L + "m";
+		}
+		return String.format(Locale.ROOT, "%dh%02dm", seconds / 3600L, (seconds / 60L) % 60L);
+	}
+
+	private double flipsPerHour() {
+		long millis = startedAt <= 0 ? 0L : System.currentTimeMillis() - startedAt;
+		return millis < 60_000L ? 0.0 : flips * 3_600_000.0 / millis;
+	}
+
+	/** How many times the loop has had to pick itself up. */
+	public int recoveries() {
+		return recoveries;
 	}
 
 	/** The panel drawn over the auction house, so the reasoning is visible. */

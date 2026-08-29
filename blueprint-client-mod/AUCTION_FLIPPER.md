@@ -258,15 +258,23 @@ The price parsing, the price model and the scoring have no Minecraft in them, so
 they can be run without the game, the mappings or a Gradle build:
 
 ```
-blueprint-client-mod/tools/check-flip-math.sh
+blueprint-client-mod/tools/check-flip-math.sh   the maths
+blueprint-client-mod/tools/check-sources.sh     calls into thin air
 ```
 
-It compiles six classes and runs 169 checks over them - what counts as a price,
+The first compiles six classes and runs 173 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
 how a sell chain is read, how the shopping lists are matched, and - the ones
 worth reading - a whole section of bait scenarios: a planted listing seen twenty times, one person listing the same
-thing three times, a price nothing ever moves at. None of them are bought. Worth running
-after changing any of the numbers.
+thing three times, a price nothing ever moves at. None of them are bought. Worth
+running after changing any of the numbers.
+
+The second is there because the mod cannot be built without Minecraft and the
+Yarn mappings, and javac is no help without them: with the argument types
+unresolved it never tries to resolve the calls either, so a method that was
+never written sails straight through. It reads the source instead and reports
+any method the mod calls on itself that nothing declares. It has already earned
+its keep once.
 
 ## Settings
 
@@ -316,10 +324,12 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | `flip.saleTax` | `0.05` | The cut the auction house takes when something sells. |
 | `flip.undercut` | `0.03` | How far under the competition to list. |
 | `flip.binOnly` | `true` | Ignore items being bid on. |
+| `flip.keepRunning` | `true` | Carry on after trouble instead of switching off. |
 | `flip.actionDelayMs` | `400` | Pause between clicks; each one is a server round trip. |
+| `flip.buyDelayMs` | `250` | Pause between the clicks that buy something. |
 | `flip.actionJitterMs` | `250` | Random extra on top of every pause. |
-| `flip.refreshDelayMs` | `900` | Pause between page reloads. |
-| `flip.maxRefreshesPerMinute` | `40` | Hard cap on reloads. |
+| `flip.refreshDelayMs` | `1000` | Pause between page reloads. |
+| `flip.maxRefreshesPerMinute` | `50` | Hard cap on reloads. |
 
 ## On DonutSMP
 
@@ -350,13 +360,41 @@ takes - see "Listing with /ah sell" above for what it does and how it knows it
 worked. If the server ever moves to a menu, `flip.sellFlow` covers that without
 touching the mod.
 
-## When it stops by itself
+## Leaving it running
 
-- The session budget is spent, or `flip.stopAfterFlips` flips are done.
-- The browse command opened nothing five times over - usually a wrong
-  `flip.browseCommand`.
-- Five buy screens in a row it could not work out - usually
-  `flip.buyButtons` not matching what your server calls the button.
+It is built to be left on. The loop is browse, price, buy, relist, reload, and
+it keeps turning until you switch the module off.
 
-Each one switches the module off and says why in chat. Opening any Blueprint
-screen, or any other menu, pauses it where it stands.
+**Trouble does not end the session.** A menu it cannot read, a buy screen that
+went somewhere unexpected, a sell command that got no answer - each of those
+used to switch the module off, which meant the next twelve hours were spent
+doing nothing. Now it says what happened, waits five seconds and starts the loop
+again. Set `flip.keepRunning` to false if you would rather it stopped and waited
+for you.
+
+**A watchdog catches the rest.** Every step has its own timeout, but a step can
+only time out if it is reached at all; anything that leaves the machine wedged
+for forty five seconds restarts the loop.
+
+**Reconnects are handled.** Changing world or server clears whatever it was
+doing and starts again once things settle, rather than carrying on halfway
+through a purchase on a server you have left.
+
+**A full inventory or a spent budget pauses buying, not watching.** It keeps
+reading the auction house - every page is more evidence for later - and starts
+buying again by itself the moment you make room or raise the budget. The HUD
+line says so:
+
+```
+Flip: browsing | up 6h12m | 14203 scans | 61 flips (9.8/h) | spent $840m | est $310m
+```
+
+Only three things actually stop it: switching the module off, hitting
+`flip.stopAfterFlips`, or trouble while `flip.keepRunning` is false. Opening the
+Blueprint menu, or any other screen, pauses it where it stands and it carries on
+when you close it.
+
+**Pacing.** A page reload every second, at most fifty a minute, with a random
+extra on every pause. Buying is quicker than browsing - `flip.buyDelayMs`,
+250ms - because somebody else is looking at the same listing. Turning those down
+buys faster and looks less like a person; that trade is yours to make.
