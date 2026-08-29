@@ -75,6 +75,11 @@ public final class FlipSettings {
 		return INSTANCE;
 	}
 
+	/** A fresh set of factory settings, so a screen can offer "put it back". */
+	public static FlipSettings defaults() {
+		return new FlipSettings();
+	}
+
 	// ------------------------------------------------------------------ file
 
 	public void load(Properties properties) {

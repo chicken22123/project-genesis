@@ -12,7 +12,8 @@ Three toggles come with it, in the Blueprint menu (Right Shift by default):
 | Flip Stats | HUD | One line: stage, scans, flips, coins spent, expected profit. |
 
 **Switch Flip Dry Run on first.** It costs nothing and it is the only way to
-find out whether the wording defaults below match your server.
+find out whether the wording defaults match your server. The FLIPPER button in
+the menu's top bar opens everything below.
 
 ## Before you turn it on
 
@@ -115,9 +116,15 @@ after changing any of the numbers.
 
 ## Settings
 
-All of it lives in `config/blueprintclient.properties`, written the first time
-the menu saves. Defaults suit a chest based auction house with a `/ah` browser
-and an anvil that reloads the page.
+Press **FLIPPER** in the top bar of the Blueprint menu. Two columns - what it
+may spend and what counts as a good enough flip on the left, what your server
+calls things and how fast to click on the right. Click a row to type a new
+value, right click a row to put it back to the default, and RESET ALL puts back
+every one of them.
+
+Everything is written to `config/blueprintclient.properties` on the way out, so
+it can also be edited by hand. Defaults suit a chest based auction house with a
+`/ah` browser and an anvil that reloads the page.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

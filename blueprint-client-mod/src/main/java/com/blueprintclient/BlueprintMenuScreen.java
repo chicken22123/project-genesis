@@ -44,6 +44,7 @@ public class BlueprintMenuScreen extends Screen {
 	private static final int SEARCH_WIDTH = 180;
 	private static final int COLLAPSE_ZONE = 16;
 	private static final String EDIT_LABEL = "EDIT HUD";
+	private static final String SETUP_LABEL = "FLIPPER";
 
 	private String search = "";
 	private boolean binding;
@@ -111,6 +112,13 @@ public class BlueprintMenuScreen extends Screen {
 		field(context, editX, BAR_Y, editWidth, editHovered);
 		context.drawTextWithShadow(
 				this.textRenderer, EDIT_LABEL, editX + 8, BAR_Y + 4, editHovered ? ACCENT_LIGHT : TEXT);
+
+		int setupWidth = setupWidth();
+		int setupX = setupX();
+		boolean setupHovered = inside(mouseX, mouseY, setupX, BAR_Y, setupWidth, FIELD_HEIGHT);
+		field(context, setupX, BAR_Y, setupWidth, setupHovered);
+		context.drawTextWithShadow(
+				this.textRenderer, SETUP_LABEL, setupX + 8, BAR_Y + 4, setupHovered ? ACCENT_LIGHT : TEXT);
 	}
 
 	/** Draws one panel and returns the module under the pointer, if any. */
@@ -222,6 +230,14 @@ public class BlueprintMenuScreen extends Screen {
 		return bindX(bindWidth()) - editWidth() - 8;
 	}
 
+	private int setupWidth() {
+		return this.textRenderer.getWidth(SETUP_LABEL) + 16;
+	}
+
+	private int setupX() {
+		return editX() - setupWidth() - 8;
+	}
+
 	private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {
 		return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
 	}
@@ -254,6 +270,12 @@ public class BlueprintMenuScreen extends Screen {
 		if (inside(mouseX, mouseY, editX(), BAR_Y, editWidth(), FIELD_HEIGHT)) {
 			BlueprintConfig.save();
 			this.client.setScreen(new HudEditorScreen(this));
+			return true;
+		}
+
+		if (inside(mouseX, mouseY, setupX(), BAR_Y, setupWidth(), FIELD_HEIGHT)) {
+			BlueprintConfig.save();
+			this.client.setScreen(new FlipSettingsScreen(this));
 			return true;
 		}
 
