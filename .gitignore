@@ -7,3 +7,7 @@ blueprint-client-mod/build/
 blueprint-client-mod/.gradle/
 blueprint-client-mod/run/
 *.class
+
+# blueprint-client (PyInstaller)
+blueprint-client/build/
+blueprint-client/dist/

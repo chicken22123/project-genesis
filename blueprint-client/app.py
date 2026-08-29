@@ -10,6 +10,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import traceback
 import tkinter as tk
@@ -26,10 +27,48 @@ from page_mods import ModsPage
 from page_play import PlayPage
 from page_settings import SettingsPage
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(HERE, "blueprint_instance.json")
-LOG_PATH = os.path.join(HERE, "launch.log")
-ICON_PATH = os.path.join(HERE, "blueprint_icon.ico")
+
+def _bundle_dir():
+    """Where the read-only assets live.
+
+    A PyInstaller build unpacks them into its own directory, which is not where
+    ``__file__`` points, so the icon has to be looked up separately from the
+    files the launcher writes.
+    """
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(sys.executable)))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _data_dir():
+    """Where the config and the log live - somewhere that outlives the run.
+
+    A onefile build unpacks into a temp directory that Windows deletes on exit,
+    so a config written beside ``__file__`` would be gone by the next launch.
+    Beside the exe is the findable place for it; an install under Program Files
+    is read-only, and falls back to %APPDATA%.
+    """
+    if not getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(__file__))
+
+    beside_exe = os.path.dirname(os.path.abspath(sys.executable))
+    if os.access(beside_exe, os.W_OK):
+        return beside_exe
+
+    roaming = os.environ.get("APPDATA") or os.path.expanduser("~")
+    fallback = os.path.join(roaming, "BlueprintClient")
+    try:
+        os.makedirs(fallback, exist_ok=True)
+    except OSError:
+        return beside_exe
+    return fallback
+
+
+BUNDLE_DIR = _bundle_dir()
+DATA_DIR = _data_dir()
+CONFIG_PATH = os.path.join(DATA_DIR, "blueprint_instance.json")
+LOG_PATH = os.path.join(DATA_DIR, "launch.log")
+ICON_PATH = os.path.join(BUNDLE_DIR, "blueprint_icon.ico")
 
 APP_VERSION = "1.1.0"
 
