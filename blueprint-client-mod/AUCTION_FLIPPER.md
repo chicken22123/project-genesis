@@ -28,8 +28,8 @@ something the mod can soften.
 3. Feed the cheapest copy of each item into the price model.
 4. Score every listing. If one clears all the thresholds, click it and press
    whatever buy and confirm buttons the following screens hold.
-5. Once the item is in the inventory, put it in hand and send the sell command
-   with a price just under the cheapest competing copy.
+5. Once the item is in the inventory, list it again just under the cheapest
+   competing copy - by sell command, or by walking the menus (below).
 6. Otherwise click the anvil to reload the page, and go back to step 2.
 
 Nothing else is ever clicked. The flipper only touches a slot it has priced, or
@@ -100,6 +100,34 @@ Prices seen are kept in `config/blueprintclient-market.properties` and reloaded
 next session, so the warm-up only really happens once. Samples older than six
 hours are dropped: they describe an older market.
 
+## Listing where there is no sell command
+
+Plenty of servers - Hypixel among them - have nothing like `/ah sell 1000`.
+Listing something means walking a chain of menus, and the chain differs from
+server to server, so the flipper reads it from `flip.sellFlow` rather than
+guessing:
+
+```
+flip.sellFlow = button:manage auctions, button:create auction, item, \
+                button:custom amount, price, button:create auction
+```
+
+| Step | What it does |
+| --- | --- |
+| `button:name` | Click the item in the open menu whose name contains `name`. |
+| `item` | Click the bought item in the inventory half of the menu, which is how most auction houses take it from you. |
+| `price` | Send the asking price, plainly, for a menu that asks you to type it. `price:/ah price %price%` sends a command instead. |
+| `wait:800` | Stand still for that many milliseconds, for a menu that takes its time. |
+
+Each step has its own six second timeout. If one runs out, the flipper says
+which step it got stuck on and goes back to browsing rather than clicking away
+at a menu it no longer follows - so a chain that half works tells you where it
+stopped matching your server.
+
+Leave it empty and `flip.sellCommand` is used instead, which is all a server
+with a real sell command needs. Build the chain with Flip Dry Run on: the
+flipper will not buy anything, but everything else can be watched.
+
 ## Checking the maths
 
 The price parsing, the price model and the scoring have no Minecraft in them, so
@@ -109,9 +137,10 @@ they can be run without the game, the mappings or a Gradle build:
 blueprint-client-mod/tools/check-flip-math.sh
 ```
 
-It compiles four classes and runs 64 checks over them - what counts as a price,
+It compiles five classes and runs 79 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
-and that nothing is bought before the market has been watched. Worth running
+how a sell chain is read, and that nothing is bought before the market has been
+watched. Worth running
 after changing any of the numbers.
 
 ## Settings
@@ -130,6 +159,7 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | --- | --- | --- |
 | `flip.browseCommand` | `ah` | Command that opens the browser, no slash. |
 | `flip.sellCommand` | `ah sell %price%` | Listing command; `%price%` is filled in. |
+| `flip.sellFlow` | empty | Menu chain for servers with no sell command; see above. |
 | `flip.browseTitles` | `auction,ah browser,market` | Window titles that mean "browser". |
 | `flip.buyButtons` | `buy it now,buy item right now,buy,confirm,purchase,accept` | Item names the flipper may click to buy. |
 | `flip.sellButtons` | `confirm,create auction,list item,accept,yes` | Item names that finish a listing. |

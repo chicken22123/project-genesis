@@ -24,6 +24,12 @@ public final class FlipSettings {
 	public String browseCommand = "ah";
 	/** How an item in hand is listed. {@code %price%} is replaced with the asking price. */
 	public String sellCommand = "ah sell %price%";
+	/**
+	 * The menu chain for auction houses with no sell command, e.g.
+	 * {@code button:manage auctions, button:create auction, item, price,
+	 * button:confirm}. Empty means use {@link #sellCommand}. See {@link SellFlow}.
+	 */
+	public String sellFlow = "";
 
 	/** Screen titles that mean "this is the browser", lower case. */
 	public List<String> browseTitles = list("auction", "ah browser", "market");
@@ -85,6 +91,7 @@ public final class FlipSettings {
 	public void load(Properties properties) {
 		browseCommand = string(properties, "flip.browseCommand", browseCommand);
 		sellCommand = string(properties, "flip.sellCommand", sellCommand);
+		sellFlow = properties.getProperty("flip.sellFlow", sellFlow).trim();
 
 		browseTitles = words(properties, "flip.browseTitles", browseTitles);
 		buyButtons = words(properties, "flip.buyButtons", buyButtons);
@@ -119,6 +126,7 @@ public final class FlipSettings {
 	public void save(Properties properties) {
 		properties.setProperty("flip.browseCommand", browseCommand);
 		properties.setProperty("flip.sellCommand", sellCommand);
+		properties.setProperty("flip.sellFlow", sellFlow);
 
 		properties.setProperty("flip.browseTitles", String.join(",", browseTitles));
 		properties.setProperty("flip.buyButtons", String.join(",", buyButtons));

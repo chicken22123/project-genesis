@@ -121,6 +121,8 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.browseCommand, value -> settings.browseCommand = value));
 		rows.add(text("Sell command", "How an item in hand is listed. %price% is filled in.",
 				() -> settings.sellCommand, value -> settings.sellCommand = value));
+		rows.add(optional("Sell menu chain", "Menus to walk when there is no sell command. Empty uses the command.",
+				() -> settings.sellFlow, value -> settings.sellFlow = value));
 		rows.add(words("Browser titles", "Window titles that mean the auction house browser.",
 				() -> settings.browseTitles, value -> settings.browseTitles = value));
 		rows.add(words("Buy buttons", "Item names the flipper may click to buy something.",
@@ -207,6 +209,16 @@ public class FlipSettingsScreen extends Screen {
 				return false;
 			}
 			set.accept(value.trim());
+			return true;
+		});
+	}
+
+	/** Like {@link #text}, but an empty value means something - "do it the other way". */
+	private static Row optional(
+			String label, String help, Supplier<String> get, java.util.function.Consumer<String> set) {
+		return new Row(label, help, Kind.TEXT, () -> get.get().isEmpty() ? "(none)" : get.get(), value -> {
+			String trimmed = value.trim();
+			set.accept("(none)".equals(trimmed) ? "" : trimmed);
 			return true;
 		});
 	}

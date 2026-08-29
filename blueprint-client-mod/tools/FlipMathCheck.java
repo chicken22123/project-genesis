@@ -2,6 +2,7 @@ import com.blueprintclient.flip.FlipMath;
 import com.blueprintclient.flip.FlipSettings;
 import com.blueprintclient.flip.MarketModel;
 import com.blueprintclient.flip.PriceText;
+import com.blueprintclient.flip.SellFlow;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +27,7 @@ public final class FlipMathCheck {
 		modelPersistence();
 		scoring();
 		asking();
+		sellChains();
 		warmUp();
 
 		System.out.printf("%n%d checks, %d failed%n", checks, failures);
@@ -236,6 +238,33 @@ public final class FlipMathCheck {
 		check(
 				"never at a loss, even if the market moved under us",
 				FlipMath.askingPrice(60_000L, 10_000L, settings) > 60_000L);
+	}
+
+	private static void sellChains() {
+		section("walking the sell menus");
+
+		equal("no chain means use the sell command", true, SellFlow.parse("").isEmpty());
+		equal("nor does a chain of nothing", true, SellFlow.parse(" , , ").isEmpty());
+
+		SellFlow flow = SellFlow.parse(
+				"button:manage auctions, item, price, wait:800, Confirm, wait:oops, button:");
+		equal("every readable step is kept", 5, flow.size());
+		equal("a named button", SellFlow.Kind.BUTTON, flow.step(0).kind());
+		equal("names are matched in lower case", "manage auctions", flow.step(0).argument());
+		equal("handing the item over", SellFlow.Kind.ITEM, flow.step(1).kind());
+		equal("sending the price", SellFlow.Kind.PRICE, flow.step(2).kind());
+		equal("waiting", 800L, flow.step(3).millis());
+		equal("a bare word is a button", SellFlow.Kind.BUTTON, flow.step(4).kind());
+		equal("and is matched in lower case too", "confirm", flow.step(4).argument());
+
+		equal("an unreadable wait is dropped", 1, SellFlow.parse("wait:oops, item").size());
+		equal("a huge wait is capped", 10_000L, SellFlow.parse("wait:99999999").step(0).millis());
+
+		equal("the price is typed plainly by default", "1230000",
+				SellFlow.priceMessage(SellFlow.parse("price").step(0), 1_230_000L));
+		equal("or through a template", "/ah price 1230000",
+				SellFlow.priceMessage(SellFlow.parse("price:/ah price %price%").step(0), 1_230_000L));
+		equal("steps say what they are", "click \"confirm\"", SellFlow.parse("confirm").step(0).describe());
 	}
 
 	/** The flipper should buy nothing until it has watched the market for a while. */

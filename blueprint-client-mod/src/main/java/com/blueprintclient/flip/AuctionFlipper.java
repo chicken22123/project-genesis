@@ -63,6 +63,7 @@ public final class AuctionFlipper extends Module {
 	private static final long OPEN_TIMEOUT_MS = 5_000L;
 	private static final long BUY_TIMEOUT_MS = 7_000L;
 	private static final long LIST_TIMEOUT_MS = 8_000L;
+	private static final long STEP_TIMEOUT_MS = 6_000L;
 	private static final int MAX_ERRORS = 5;
 	private static final int REPORT_LINES = 3;
 
@@ -89,6 +90,11 @@ public final class AuctionFlipper extends Module {
 
 	private Candidate pending;
 	private int pendingCountBefore;
+	private SellFlow flow;
+	private int flowIndex;
+	private long stepStart;
+	private boolean flowOpened;
+	private long listingPrice;
 	private String status = "off";
 
 	// Running totals for the HUD.
@@ -367,13 +373,32 @@ public final class AuctionFlipper extends Module {
 		}
 	}
 
-	/** Put the bought item in hand and send the sell command. */
+	/** List the item again: down the configured menu chain, or by command. */
 	private void listing(MinecraftClient client, long now) {
 		if (pending == null) {
 			backToBrowsing(client, now);
 			return;
 		}
 
+		if (flow == null) {
+			flow = SellFlow.parse(settings.sellFlow);
+			flowIndex = 0;
+			flowOpened = false;
+			stepStart = now;
+			listingPrice = FlipMath.askingPrice(pending.price(), pending.assessment().sale(), settings);
+			tell(client, "Listing " + pending.display() + " at " + AuctionParser.coins(listingPrice));
+		}
+
+		if (!flow.isEmpty()) {
+			walkSellFlow(client, now);
+			return;
+		}
+
+		listByCommand(client, now);
+	}
+
+	/** The simple case: a server with a real sell command reads what is held. */
+	private void listByCommand(MinecraftClient client, long now) {
 		if (client.currentScreen != null) {
 			client.player.closeHandledScreen();
 			delay(now, 400);
@@ -418,12 +443,16 @@ public final class AuctionFlipper extends Module {
 			return;
 		}
 
-		ScreenHandler handler = container(client);
-		if (handler != null) {
-			int button = findButton(handler, settings.sellButtons);
-			if (button >= 0 && clickOnce(client, handler, button)) {
-				delay(now, settings.actionDelayMs);
-				return;
+		// With a chain configured, the chain did the confirming; pressing more
+		// buttons here would be clicking at a menu we no longer understand.
+		if (settings.sellFlow.isBlank()) {
+			ScreenHandler handler = container(client);
+			if (handler != null) {
+				int button = findButton(handler, settings.sellButtons);
+				if (button >= 0 && clickOnce(client, handler, button)) {
+					delay(now, settings.actionDelayMs);
+					return;
+				}
 			}
 		}
 
@@ -588,6 +617,7 @@ public final class AuctionFlipper extends Module {
 	private void enter(Stage next, long now) {
 		stage = next;
 		stageStart = now;
+		flow = null;
 		clickedSyncId = -1;
 		commandSent = false;
 		clickedSlots.clear();
@@ -637,6 +667,13 @@ public final class AuctionFlipper extends Module {
 		}
 		if (!trimmed.isEmpty()) {
 			client.getNetworkHandler().sendChatCommand(trimmed);
+		}
+	}
+
+	/** A plain chat message, for a menu that asks you to type something. */
+	private void sendChat(MinecraftClient client, String message) {
+		if (client.getNetworkHandler() != null && !message.isBlank()) {
+			client.getNetworkHandler().sendChatMessage(message);
 		}
 	}
 
