@@ -3,6 +3,7 @@ package com.blueprintclient.flip;
 import com.blueprintclient.module.Category;
 import com.blueprintclient.module.Module;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
@@ -14,10 +15,13 @@ import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
@@ -62,17 +66,8 @@ public final class AuctionFlipper extends Module {
 	private static final int MAX_ERRORS = 5;
 	private static final int REPORT_LINES = 3;
 
-	/** What the scoring decided about one listing. */
-	public record Candidate(
-			int slotId,
-			String key,
-			String display,
-			long price,
-			long sale,
-			long profit,
-			double margin,
-			double confidence,
-			double score) {
+	/** A listing the maths approved of, and the arithmetic behind it. */
+	public record Candidate(int slotId, String key, String display, long price, FlipMath.Assessment assessment) {
 	}
 
 	private static AuctionFlipper active;
@@ -115,6 +110,11 @@ public final class AuctionFlipper extends Module {
 		active = this;
 	}
 
+	/** Where the learned prices are kept, next to the rest of the config. */
+	private static Path marketFile() {
+		return FabricLoader.getInstance().getConfigDir().resolve("blueprintclient-market.properties");
+	}
+
 	public static AuctionFlipper active() {
 		return active;
 	}
@@ -127,7 +127,7 @@ public final class AuctionFlipper extends Module {
 
 	@Override
 	protected void onEnable(MinecraftClient client) {
-		market.loadIfNeeded();
+		market.loadIfNeeded(marketFile());
 		spent = 0;
 		expectedProfit = 0;
 		flips = 0;
@@ -264,9 +264,9 @@ public final class AuctionFlipper extends Module {
 					"Buying %s at %s - worth about %s, margin %.0f%% (confidence %.0f%%)",
 					best.display(),
 					AuctionParser.coins(best.price()),
-					AuctionParser.coins(best.sale()),
-					best.margin() * 100.0,
-					best.confidence() * 100.0));
+					AuctionParser.coins(best.assessment().sale()),
+					best.assessment().margin() * 100.0,
+					best.assessment().confidence() * 100.0));
 			enter(Stage.BUYING, now);
 			delay(now, settings.actionDelayMs);
 			return;
@@ -274,7 +274,10 @@ public final class AuctionFlipper extends Module {
 
 		if (best != null && dryRun) {
 			status = String.format(
-					Locale.ROOT, "would buy %s (+%s)", best.display(), AuctionParser.coins(best.profit()));
+					Locale.ROOT,
+					"would buy %s (+%s)",
+					best.display(),
+					AuctionParser.coins(best.assessment().profit()));
 		} else {
 			status = "watching - " + market.describe();
 		}
@@ -399,7 +402,7 @@ public final class AuctionFlipper extends Module {
 			return;
 		}
 
-		long price = askingPrice(pending);
+		long price = FlipMath.askingPrice(pending.price(), pending.assessment().sale(), settings);
 		send(client, settings.sellCommandFor(price));
 		status = "listing " + pending.display() + " at " + AuctionParser.coins(price);
 		listedSignal = false;
@@ -436,7 +439,7 @@ public final class AuctionFlipper extends Module {
 	private void finishListing(MinecraftClient client, long now) {
 		if (pending != null) {
 			flips++;
-			expectedProfit += pending.profit();
+			expectedProfit += pending.assessment().profit();
 		}
 		pending = null;
 
@@ -463,86 +466,49 @@ public final class AuctionFlipper extends Module {
 	// ----------------------------------------------------------------- maths
 
 	/**
-	 * Score every listing on the page and return the best one worth buying.
+	 * Price every listing on the page and pick the best one worth buying.
 	 *
-	 * <p>For a listing at price {@code p} of an item the model values at
-	 * {@code v}, with the next cheapest copy on the page at {@code c}:
-	 *
-	 * <pre>
-	 *   resale = min(v, c) x (1 - undercut)     what it can be sold for
-	 *   net    = resale x (1 - tax)             what lands in the purse
-	 *   profit = net - p
-	 *   margin = profit / p
-	 *   score  = profit x confidence x supply
-	 * </pre>
-	 *
-	 * <p>Scoring by profit alone would keep picking the one huge margin the
-	 * model is least sure about. Multiplying by confidence prefers the flip that
-	 * is most likely to be real, and the supply term nudges it towards items
-	 * that show up often, because those are the ones that sell again quickly.
+	 * <p>The arithmetic itself is {@link FlipMath}; what happens here is the
+	 * bookkeeping around it - the ranking, and a tally of why the rest were
+	 * turned down, which is the only way to tell a quiet market from a
+	 * misconfigured one while watching it work.
 	 */
 	private Candidate evaluate(AuctionScan scan, long now) {
 		List<Candidate> found = new ArrayList<>();
+		Map<FlipMath.Verdict, Integer> tally = new EnumMap<>(FlipMath.Verdict.class);
 
 		for (AuctionScan.Listing listing : scan.listings()) {
-			if (listing.price() <= 0) {
-				continue;
-			}
 			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
-			if (!appraisal.isKnown()
-					|| appraisal.samples() < settings.minSamples
-					|| appraisal.confidence() < settings.minConfidence
-					|| appraisal.dispersion() > settings.maxDispersion) {
-				continue;
+			FlipMath.Assessment assessment =
+					FlipMath.assess(listing.price(), scan.competitor(listing.key()), appraisal, settings);
+			tally.merge(assessment.verdict(), 1, Integer::sum);
+			if (assessment.worthBuying()) {
+				found.add(new Candidate(
+						listing.slotId(), listing.key(), listing.display(), listing.price(), assessment));
 			}
-
-			long competitor = scan.competitor(listing.key());
-			long reference = competitor > 0 ? Math.min(appraisal.fairValue(), competitor) : appraisal.fairValue();
-			long sale = Math.round(reference * (1.0 - settings.undercut));
-			long net = Math.round(sale * (1.0 - settings.saleTax));
-			long profit = net - listing.price();
-			if (profit < settings.minProfit) {
-				continue;
-			}
-			double margin = profit / (double) listing.price();
-			if (margin < settings.minMargin) {
-				continue;
-			}
-			// A margin this big usually means two different items are sharing a
-			// name - a reforge, an enchant, a pet level the lore did not show.
-			if (margin > settings.suspiciousMargin && appraisal.samples() < settings.trustedSamples) {
-				continue;
-			}
-
-			double score = profit * appraisal.confidence() * (0.5 + 0.5 * appraisal.supplyRate());
-			found.add(new Candidate(
-					listing.slotId(),
-					listing.key(),
-					listing.display(),
-					listing.price(),
-					sale,
-					profit,
-					margin,
-					appraisal.confidence(),
-					score));
 		}
 
-		found.sort((left, right) -> Double.compare(right.score(), left.score()));
+		found.sort((left, right) -> Double.compare(right.assessment().score(), left.assessment().score()));
 
 		report.clear();
+		report.add(summarise(scan.listingCount(), tally));
 		for (int i = 0; i < Math.min(REPORT_LINES, found.size()); i++) {
 			Candidate candidate = found.get(i);
-			report.add(String.format(
-					Locale.ROOT,
-					"%s  %s -> %s  +%s (%.0f%%)",
-					shorten(candidate.display()),
-					AuctionParser.coins(candidate.price()),
-					AuctionParser.coins(candidate.sale()),
-					AuctionParser.coins(candidate.profit()),
-					candidate.margin() * 100.0));
+			report.add(FlipMath.explain(shorten(candidate.display()), candidate.price(), candidate.assessment()));
 		}
 
 		return found.isEmpty() ? null : found.get(0);
+	}
+
+	/** "42 listings: 28 not priced yet, 11 too new, 3 worth buying". */
+	private static String summarise(int listings, Map<FlipMath.Verdict, Integer> tally) {
+		StringBuilder line = new StringBuilder().append(listings).append(" listings");
+		boolean first = true;
+		for (Map.Entry<FlipMath.Verdict, Integer> entry : tally.entrySet()) {
+			line.append(first ? ": " : ", ").append(entry.getValue()).append(' ').append(entry.getKey().description());
+			first = false;
+		}
+		return line.toString();
 	}
 
 	private boolean affordable(Candidate candidate) {
@@ -550,26 +516,6 @@ public final class AuctionFlipper extends Module {
 			return false;
 		}
 		return settings.sessionBudget <= 0 || spent + candidate.price() <= settings.sessionBudget;
-	}
-
-	/** Just under the cheapest competing copy, and never below what it cost. */
-	private long askingPrice(Candidate candidate) {
-		long floor = Math.round(candidate.price() * (1.0 + settings.minMargin));
-		return roundNicely(Math.max(candidate.sale(), floor));
-	}
-
-	/** 1,238,491 becomes 1,230,000: round numbers look like a person typed them. */
-	private static long roundNicely(long amount) {
-		if (amount < 1_000L) {
-			return amount;
-		}
-		long magnitude = 1L;
-		long scratch = amount;
-		while (scratch >= 1_000L) {
-			scratch /= 10L;
-			magnitude *= 10L;
-		}
-		return Math.max(1L, amount / magnitude * magnitude);
 	}
 
 	// --------------------------------------------------------------- clicking

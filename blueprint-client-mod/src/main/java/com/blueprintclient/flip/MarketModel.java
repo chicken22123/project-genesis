@@ -1,7 +1,5 @@
 package com.blueprintclient.flip;
 
-import net.fabricmc.loader.api.FabricLoader;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,8 +32,9 @@ import java.util.Properties;
  * <ul>
  *   <li>the <b>median</b> is taken, which a single silly price cannot move;
  *   <li>the <b>median absolute deviation</b> measures the spread around it;
- *   <li>samples further than three deviations from the median are dropped as
- *       outliers, and the median of what is left is the fair value;
+ *   <li>samples far enough from the median are dropped as outliers - three
+ *       scaled deviations out, or five per cent, whichever is the wider net -
+ *       and the median of what is left is the fair value;
  *   <li>the leftover spread becomes <b>dispersion</b>, which is how unsure the
  *       model is about that fair value.
  * </ul>
@@ -45,8 +44,6 @@ import java.util.Properties;
  * market that agrees with itself.
  */
 public final class MarketModel {
-	private static final String FILE_NAME = "blueprintclient-market.properties";
-
 	/** Old prices describe an old market. */
 	private static final long SAMPLE_TTL_MS = 6L * 60L * 60L * 1000L;
 	private static final int MAX_SAMPLES_PER_ITEM = 48;
@@ -56,6 +53,12 @@ public final class MarketModel {
 	/** How fast confidence decays with age, and how many samples count as "enough". */
 	private static final double RECENCY_HALF_LIFE_MINUTES = 45.0;
 	private static final double SAMPLE_SOFTENER = 3.0;
+
+	/** Turning a median absolute deviation into something like a standard deviation. */
+	private static final double MAD_TO_SIGMA = 1.4826;
+	private static final double OUTLIER_SIGMAS = 3.0;
+	/** No listing within this fraction of the median is an outlier, however tight the market. */
+	private static final double OUTLIER_FLOOR = 0.05;
 
 	/** What the model believes about one item. */
 	public record Appraisal(long fairValue, double dispersion, double confidence, int samples, double supplyRate) {
@@ -79,6 +82,7 @@ public final class MarketModel {
 	// database gets too big.
 	private final Map<String, Series> items = new LinkedHashMap<>(16, 0.75f, true);
 	private long scans;
+	private Path file;
 	private boolean loaded;
 	private boolean dirty;
 	private long lastSave;
@@ -142,9 +146,15 @@ public final class MarketModel {
 		double median = median(prices);
 		double deviation = medianAbsoluteDeviation(prices, median);
 
+		// The deviation is scaled into the same units as a standard deviation
+		// (the 1.4826 is the usual constant for that), and floored at a few per
+		// cent of the price. Without the floor a handful of samples that happen
+		// to agree closely makes the deviation tiny, and the next honest listing
+		// a couple of per cent away gets thrown out as an outlier.
+		double tolerance = Math.max(OUTLIER_SIGMAS * MAD_TO_SIGMA * deviation, OUTLIER_FLOOR * median);
 		List<Long> kept = new ArrayList<>(prices.size());
 		for (long price : prices) {
-			if (deviation <= 0.0 || Math.abs(price - median) <= 3.0 * deviation) {
+			if (Math.abs(price - median) <= tolerance) {
 				kept.add(price);
 			}
 		}
@@ -215,15 +225,15 @@ public final class MarketModel {
 	 * ages written relative to the save so a clock change cannot make every
 	 * sample look like it came from the future.
 	 */
-	public void loadIfNeeded() {
+	public void loadIfNeeded(Path source) {
 		if (loaded) {
 			return;
 		}
 		loaded = true;
+		file = source;
 		lastSave = System.currentTimeMillis();
 
-		Path file = path();
-		if (!Files.isRegularFile(file)) {
+		if (file == null || !Files.isRegularFile(file)) {
 			return;
 		}
 
@@ -285,7 +295,7 @@ public final class MarketModel {
 	}
 
 	public void save() {
-		if (!loaded) {
+		if (!loaded || file == null) {
 			return;
 		}
 		lastSave = System.currentTimeMillis();
@@ -310,7 +320,6 @@ public final class MarketModel {
 			properties.setProperty("item." + entry.getKey(), line.toString());
 		}
 
-		Path file = path();
 		try {
 			Files.createDirectories(file.getParent());
 			try (OutputStream output = Files.newOutputStream(file)) {
@@ -319,10 +328,6 @@ public final class MarketModel {
 		} catch (IOException exception) {
 			// Losing the history costs a few minutes of relearning, nothing more.
 		}
-	}
-
-	private static Path path() {
-		return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
 	}
 
 	/** For the overlay: a one line summary of what the model knows. */

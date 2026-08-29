@@ -47,8 +47,11 @@ price a seller actually has to beat. From those samples:
   would drag an average a long way, and a flipper that believes a bad number
   buys rubbish;
 - the **median absolute deviation** measures how tightly the market agrees;
-- samples more than three deviations out are dropped as outliers, and the
-  median of what is left becomes the fair value `v`;
+- samples far enough out are dropped as outliers - three scaled deviations, or
+  five per cent of the median, whichever is the wider net - and the median of
+  what is left becomes the fair value `v`. The five per cent floor matters: a
+  few samples that happen to agree closely make the deviation tiny, and without
+  it the next honest listing a couple of per cent away gets thrown out;
 - the leftover spread, `MAD / median`, is the **dispersion**.
 
 For a listing at price `p`, with the next cheapest copy on the same page at `c`:
@@ -84,6 +87,10 @@ Two guards sit on top:
 - a dispersion above `flip.maxDispersion` is refused outright: the market has
   not settled on a price, so there is no number to trade against.
 
+While it works, the panel over the auction house shows the page as the maths
+sees it - `42 listings: 28 not priced yet, 11 too new, 3 worth buying` - which
+is the quickest way to tell a quiet market from a misconfigured one.
+
 **It buys nothing for the first minute or two.** Each item needs
 `flip.minSamples` sightings across separate pages before it will be priced, so
 the first stretch is spent watching. That is the model warming up, not a fault.
@@ -91,6 +98,20 @@ the first stretch is spent watching. That is the model warming up, not a fault.
 Prices seen are kept in `config/blueprintclient-market.properties` and reloaded
 next session, so the warm-up only really happens once. Samples older than six
 hours are dropped: they describe an older market.
+
+## Checking the maths
+
+The price parsing, the price model and the scoring have no Minecraft in them, so
+they can be run without the game, the mappings or a Gradle build:
+
+```
+blueprint-client-mod/tools/check-flip-math.sh
+```
+
+It compiles four classes and runs 64 checks over them - what counts as a price,
+what counts as the same item, how outliers are handled, what each verdict means,
+and that nothing is bought before the market has been watched. Worth running
+after changing any of the numbers.
 
 ## Settings
 
