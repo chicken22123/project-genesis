@@ -24,7 +24,11 @@ a = Analysis(
     [os.path.join(HERE, "app.py")],
     pathex=[HERE],
     binaries=[],
-    datas=[(os.path.join(HERE, "blueprint_icon.ico"), ".")],
+    datas=[
+        (os.path.join(HERE, "blueprint_icon.ico"), "."),
+        # The window icon on any platform Tk will not hand a .ico to.
+        (os.path.join(HERE, "blueprint_icon.png"), "."),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

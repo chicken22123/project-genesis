@@ -19,6 +19,31 @@ cd project-genesis/blueprint-client
 `python3-tk` matters - the container ships Python without tkinter, and the app
 will not start without it.
 
+## Making it a launcher icon
+
+Typing `./run.sh` every time gets old. To get a real ChromeOS app icon:
+
+```sh
+./install-chromeos-app.sh
+```
+
+"Blueprint Client" then shows up in the ChromeOS launcher (the circle at the
+bottom-left) under Linux apps, within a few seconds - nothing needs restarting.
+Right-click it there to pin it to the shelf.
+
+What that script does: writes `~/.local/share/applications/blueprint-client.desktop`
+and drops a 256x256 PNG into `~/.local/share/icons`. ChromeOS watches that
+applications folder and mirrors anything in it into the launcher. The entry
+points at `run.sh` by absolute path, so leave the project where it is - if you
+move the folder, run the script again.
+
+To remove it:
+
+```sh
+rm ~/.local/share/applications/blueprint-client.desktop
+rm ~/.local/share/icons/hicolor/256x256/apps/blueprint-client.png
+```
+
 ## You also need the Modrinth App
 
 Blueprint Client is a front-end for instances the Modrinth App manages. It reads
@@ -37,14 +62,12 @@ If yours lives elsewhere, set `modrinth_data_dir` on the Settings page.
 
 ## What differs from Windows
 
-Everything that matters works, with two deliberate exceptions:
+Everything that matters works. One thing genuinely differs:
 
 - **Deleting a mod is permanent.** The Recycle Bin is a Windows shell feature,
   so `recycle.py` reports itself unavailable and the confirmation says the
   delete cannot be undone. It is telling you the truth - back up anything you
   care about.
-- **The window has no custom icon.** Tk only accepts `.ico` files on Windows;
-  the call is wrapped in a `try` and skipped elsewhere.
 
 ## Before you spend an evening on it
 

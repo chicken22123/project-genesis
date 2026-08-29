@@ -69,6 +69,9 @@ DATA_DIR = _data_dir()
 CONFIG_PATH = os.path.join(DATA_DIR, "blueprint_instance.json")
 LOG_PATH = os.path.join(DATA_DIR, "launch.log")
 ICON_PATH = os.path.join(BUNDLE_DIR, "blueprint_icon.ico")
+# The same mark as a PNG, for the platforms Tk will not hand a .ico to and for
+# the ChromeOS launcher entry.
+ICON_PNG_PATH = os.path.join(BUNDLE_DIR, "blueprint_icon.png")
 
 APP_VERSION = "1.1.0"
 
@@ -165,9 +168,20 @@ class BlueprintApp:
 
         # The same mark the desktop shortcut uses, so the window and the taskbar
         # match instead of showing Tk's default feather.
+        # iconbitmap only accepts .ico, and only on Windows. Everywhere else
+        # Tk reads the PNG through PhotoImage - which needs the reference kept,
+        # or it is collected and the window goes back to Tk's feather.
+        icon_set = False
         if os.path.isfile(ICON_PATH):
             try:
                 self.root.iconbitmap(default=ICON_PATH)
+                icon_set = True
+            except tk.TclError:
+                pass
+        if not icon_set and os.path.isfile(ICON_PNG_PATH):
+            try:
+                self._icon_image = tk.PhotoImage(file=ICON_PNG_PATH)
+                self.root.iconphoto(True, self._icon_image)
             except tk.TclError:
                 pass
 
@@ -461,7 +475,9 @@ class BlueprintApp:
 
 def main():
     _log("--- Blueprint Client starting ---")
-    root = tk.Tk()
+    # className becomes the window's WM_CLASS, which is how the ChromeOS
+    # launcher (and any Linux shelf) ties the open window to its icon.
+    root = tk.Tk(className="BlueprintClient")
     BlueprintApp(root)
     root.mainloop()
     _log("--- Blueprint Client closed ---")
