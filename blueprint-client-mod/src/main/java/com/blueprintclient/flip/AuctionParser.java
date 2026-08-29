@@ -82,6 +82,11 @@ public final class AuctionParser {
 		return PriceText.buyItNowPrice(lore(stack), binOnly);
 	}
 
+	/** Who has this listed, or empty when the auction house does not say. */
+	public static String seller(ItemStack stack) {
+		return PriceText.seller(lore(stack));
+	}
+
 	/** Whether an item is one of the buttons named in the settings. */
 	public static boolean isButton(ItemStack stack, List<String> names) {
 		return PriceText.isButton(plain(stack.getName()), names);

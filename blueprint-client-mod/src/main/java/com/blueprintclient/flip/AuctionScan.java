@@ -7,6 +7,7 @@ import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,11 +30,14 @@ public final class AuctionScan {
 	 * market is measured in - otherwise a stack of sixty four looks like a
 	 * wildly overpriced single.
 	 */
-	public record Listing(int slotId, String key, String display, long price, int count, long unitPrice) {
+	public record Listing(
+			int slotId, String key, String display, long price, int count, long unitPrice, String seller) {
 	}
 
+	private final List<Listing> all = new ArrayList<>();
 	private final Map<String, Listing> cheapest = new HashMap<>();
 	private final Map<String, Long> runnerUp = new HashMap<>();
+	private final Map<String, Integer> depth = new HashMap<>();
 	private int refreshSlot = -1;
 	private int listingCount;
 
@@ -69,14 +73,18 @@ public final class AuctionScan {
 			int count = Math.max(1, stack.getCount());
 			long unitPrice = Math.max(1L, price / count);
 			String display = (count > 1 ? count + "x " : "") + AuctionParser.plain(stack.getName());
+			Listing listing =
+					new Listing(slot.id, key, display, price, count, unitPrice, AuctionParser.seller(stack));
 
 			scan.listingCount++;
+			scan.all.add(listing);
+			scan.depth.merge(key, 1, Integer::sum);
 			Listing best = scan.cheapest.get(key);
 			if (best == null || unitPrice < best.unitPrice()) {
 				if (best != null) {
 					scan.runnerUp.put(key, best.unitPrice());
 				}
-				scan.cheapest.put(key, new Listing(slot.id, key, display, price, count, unitPrice));
+				scan.cheapest.put(key, listing);
 			} else {
 				Long second = scan.runnerUp.get(key);
 				if (second == null || unitPrice < second) {
@@ -96,9 +104,19 @@ public final class AuctionScan {
 		return AuctionParser.isButton(stack, settings.refreshButtons);
 	}
 
-	/** The cheapest listing of each item on this page. */
+	/** The cheapest listing of each item on this page: the only ones worth buying. */
 	public List<Listing> listings() {
 		return new ArrayList<>(cheapest.values());
+	}
+
+	/** Every listing on the page, which is what the market is measured from. */
+	public List<Listing> everything() {
+		return Collections.unmodifiableList(all);
+	}
+
+	/** How many copies of an item are on the page - how much of a market it has. */
+	public int depth(String key) {
+		return depth.getOrDefault(key, 0);
 	}
 
 	/**

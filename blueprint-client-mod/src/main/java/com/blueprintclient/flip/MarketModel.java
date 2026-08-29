@@ -9,44 +9,53 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 /**
  * What every item is worth, learned from the auction house itself.
  *
- * <p>There is no price list to download: the only market data a client has is
- * what the auction house shows it. So every page that is scanned records, for
- * each item on it, the <em>cheapest</em> copy on sale - the price a seller
- * actually has to beat. Those observations pile up per item and the model turns
- * them into a fair value.
+ * <p>There is no price list to download, and there is a trap in the only data
+ * there is: <b>an asking price is not a sale price</b>. Anyone can list dirt for
+ * two thousand and leave it there. A model that reads that as "dirt is worth two
+ * thousand" will happily pay one thousand for dirt, and then own some dirt.
  *
- * <p>The average is deliberately not used. One mispriced listing (a fat finger,
- * or bait) would drag it a long way, and a flipper that believes a bad number
- * buys rubbish. Instead:
+ * <p>So the model is built out of things that are harder to fake than a number
+ * on a sign:
  *
  * <ul>
- *   <li>the <b>median</b> is taken, which a single silly price cannot move;
- *   <li>the <b>median absolute deviation</b> measures the spread around it;
- *   <li>samples far enough from the median are dropped as outliers - three
- *       scaled deviations out, or five per cent, whichever is the wider net -
- *       and the median of what is left is the fair value;
- *   <li>the leftover spread becomes <b>dispersion</b>, which is how unsure the
- *       model is about that fair value.
+ *   <li><b>Distinct listings, counted once.</b> A listing is recognised by its
+ *       price and its seller, so the same listing seen on twenty refreshes is
+ *       one piece of evidence, not twenty. This is what stops a single planted
+ *       listing looking like a market.
+ *   <li><b>How many different people are selling it.</b> One person can list an
+ *       item ten times; ten people agreeing on a price is a market.
+ *   <li><b>Churn: whether listings actually come and go.</b> Something priced
+ *       where people buy it does not sit on the front page for ever. A price
+ *       nothing ever moves at is a price nobody pays.
+ *   <li><b>A low quantile, not the middle.</b> The fair value is the price a
+ *       thirtieth of the way up the asks, because to sell something you have to
+ *       beat the cheapest seller, not the average one. Optimistic asks sit in
+ *       the tail above it and cannot drag it up.
  * </ul>
  *
- * <p>Confidence then combines three things that all have to be true before a
- * number is worth betting coins on: enough samples, recent samples, and a
- * market that agrees with itself.
+ * <p>Spread is measured with the median absolute deviation, which one silly
+ * listing cannot move, and confidence combines everything above: enough distinct
+ * listings, recent ones, from enough people, in a market that moves, agreeing
+ * with each other.
  */
 public final class MarketModel {
 	/** Old prices describe an old market. */
 	private static final long SAMPLE_TTL_MS = 6L * 60L * 60L * 1000L;
-	private static final int MAX_SAMPLES_PER_ITEM = 48;
+	private static final int MAX_SAMPLES_PER_ITEM = 64;
+	private static final int MAX_SELLERS_PER_ITEM = 32;
 	private static final int MAX_ITEMS = 4_000;
 	private static final long SAVE_INTERVAL_MS = 120_000L;
 
@@ -60,27 +69,50 @@ public final class MarketModel {
 	/** No listing within this fraction of the median is an outlier, however tight the market. */
 	private static final double OUTLIER_FLOOR = 0.05;
 
+	/**
+	 * Where in the asks the fair value sits. Selling means beating the cheapest
+	 * seller, so the useful number is near the bottom of them - but not the very
+	 * bottom, which is one person having a bad day.
+	 */
+	private static final double LOW_QUANTILE = 0.30;
+
 	/** What the model believes about one item. */
-	public record Appraisal(long fairValue, double dispersion, double confidence, int samples, double supplyRate) {
+	public record Appraisal(
+			long fairValue,
+			double dispersion,
+			double confidence,
+			int samples,
+			double supplyRate,
+			int sellers,
+			double churn) {
 		public boolean isKnown() {
 			return samples > 0 && fairValue > 0;
 		}
 	}
 
-	private static final Appraisal UNKNOWN = new Appraisal(0L, 1.0, 0.0, 0, 0.0);
+	private static final Appraisal UNKNOWN = new Appraisal(0L, 1.0, 0.0, 0, 0.0, 0, 0.0);
 
 	private record Sample(long price, long time) {
 	}
 
+	/** A listing the model has its eye on, so it can notice when it goes. */
+	private record Live(long price, long lastSeen) {
+	}
+
 	private static final class Series {
 		private final Deque<Sample> samples = new ArrayDeque<>();
+		private final Map<String, Live> live = new LinkedHashMap<>();
+		private final Map<String, Long> sellers = new LinkedHashMap<>();
 		private long lastSeen;
 		private int appearances;
+		private int vanished;
 	}
 
 	// Access order, so the least recently seen item is the one evicted when the
 	// database gets too big.
 	private final Map<String, Series> items = new LinkedHashMap<>(16, 0.75f, true);
+	private final Map<String, Set<String>> seenThisScan = new HashMap<>();
+
 	private long scans;
 	private Path file;
 	private boolean loaded;
@@ -89,30 +121,60 @@ public final class MarketModel {
 
 	// ------------------------------------------------------------- recording
 
-	/** Call once per auction house page, before the observations from that page. */
-	public void noteScan() {
+	/** Call before the listings from one page of the auction house. */
+	public void beginScan() {
+		seenThisScan.clear();
 		scans++;
 	}
 
 	/**
-	 * Record the cheapest copy of an item seen on one page.
+	 * Record one listing on the page.
 	 *
-	 * <p>One observation per page per item: a page holding twenty of the same
-	 * thing says one thing about the market, not twenty.
+	 * <p>Called for every listing, not just the cheapest: the count of different
+	 * sellers and whether listings come and go are as much a part of the picture
+	 * as the prices are.
+	 *
+	 * @param unitPrice what one of the item costs, so a stack and a single are
+	 *     the same evidence
+	 * @param seller who is selling, or empty when the auction house does not say
 	 */
-	public void observe(String key, long lowestPrice, long now) {
-		if (key == null || key.isEmpty() || lowestPrice <= 0) {
+	public void observe(String key, long unitPrice, String seller, long now) {
+		if (key == null || key.isEmpty() || unitPrice <= 0) {
 			return;
 		}
 
 		Series series = items.computeIfAbsent(key, ignored -> new Series());
-		series.samples.addLast(new Sample(lowestPrice, now));
-		series.lastSeen = now;
-		series.appearances++;
-		while (series.samples.size() > MAX_SAMPLES_PER_ITEM) {
-			series.samples.pollFirst();
+		Set<String> seen = seenThisScan.computeIfAbsent(key, ignored -> new HashSet<>());
+		if (seen.isEmpty()) {
+			// First listing of this item on this page: the item appeared once,
+			// however many copies of it are here.
+			series.appearances++;
 		}
-		dirty = true;
+
+		String fingerprint = unitPrice + "/" + seller;
+		seen.add(fingerprint);
+
+		if (!series.live.containsKey(fingerprint)) {
+			// A listing never seen before is one new piece of evidence. Seeing
+			// the same one again on the next refresh is not.
+			series.samples.addLast(new Sample(unitPrice, now));
+			while (series.samples.size() > MAX_SAMPLES_PER_ITEM) {
+				series.samples.pollFirst();
+			}
+			dirty = true;
+		}
+		series.live.put(fingerprint, new Live(unitPrice, now));
+
+		if (!seller.isEmpty()) {
+			series.sellers.put(seller, now);
+			while (series.sellers.size() > MAX_SELLERS_PER_ITEM) {
+				Iterator<String> oldest = series.sellers.keySet().iterator();
+				oldest.next();
+				oldest.remove();
+			}
+		}
+
+		series.lastSeen = now;
 
 		if (items.size() > MAX_ITEMS) {
 			Iterator<String> oldest = items.keySet().iterator();
@@ -123,9 +185,37 @@ public final class MarketModel {
 		}
 	}
 
+	/**
+	 * Call after the listings from one page: whatever was there last time and is
+	 * not there now has moved.
+	 *
+	 * <p>Moved, not sold - it may have been bought, cancelled, or pushed onto
+	 * the next page by newer listings. What it is evidence of is an item people
+	 * are doing something about, which is the opposite of a planted price that
+	 * sits untouched for ever.
+	 */
+	public void endScan(long now) {
+		for (Map.Entry<String, Set<String>> entry : seenThisScan.entrySet()) {
+			Series series = items.get(entry.getKey());
+			if (series == null) {
+				continue;
+			}
+			Iterator<Map.Entry<String, Live>> live = series.live.entrySet().iterator();
+			while (live.hasNext()) {
+				Map.Entry<String, Live> listing = live.next();
+				if (!entry.getValue().contains(listing.getKey())) {
+					live.remove();
+					series.vanished++;
+					dirty = true;
+				}
+			}
+		}
+		seenThisScan.clear();
+	}
+
 	// ------------------------------------------------------------- appraisal
 
-	/** What the model thinks one item is worth, and how much it means it. */
+	/** What the model thinks one of an item is worth, and how much it means it. */
 	public Appraisal appraise(String key, long now) {
 		Series series = items.get(key);
 		if (series == null) {
@@ -162,19 +252,37 @@ public final class MarketModel {
 			kept = prices;
 		}
 
-		double fair = median(kept);
-		double dispersion = fair > 0.0 ? Math.min(1.0, deviation / fair) : 1.0;
+		long fair = Math.round(quantile(kept, LOW_QUANTILE));
+		double dispersion = median > 0.0 ? Math.min(1.0, deviation / median) : 1.0;
 
 		int count = kept.size();
+		int sellers = countSellers(series, now);
+		double churn = churn(series);
+
 		double sampleTerm = count / (count + SAMPLE_SOFTENER);
 		double ageMinutes = Math.max(0.0, (now - series.lastSeen) / 60_000.0);
 		double freshTerm = Math.exp(-ageMinutes / RECENCY_HALF_LIFE_MINUTES);
 		double agreementTerm = Math.max(0.05, 1.0 - dispersion);
-		double confidence = clamp(sampleTerm * freshTerm * agreementTerm);
+		// One seller is one opinion; several agreeing is a price.
+		double sellerTerm = sellers <= 0 ? 0.5 : sellers / (sellers + 1.0) * 1.5;
+		// A market where nothing ever moves is a market where nothing sells.
+		double churnTerm = 0.4 + 0.6 * churn;
+		double confidence = clamp(sampleTerm * freshTerm * agreementTerm * Math.min(1.0, sellerTerm) * churnTerm);
 
 		double supplyRate = scans <= 0 ? 0.0 : clamp(series.appearances / (double) scans);
 
-		return new Appraisal(Math.round(fair), dispersion, confidence, count, supplyRate);
+		return new Appraisal(fair, dispersion, confidence, count, supplyRate, sellers, churn);
+	}
+
+	private int countSellers(Series series, long now) {
+		series.sellers.values().removeIf(seen -> now - seen > SAMPLE_TTL_MS);
+		return series.sellers.size();
+	}
+
+	/** The share of the listings we have watched that have since gone. */
+	private static double churn(Series series) {
+		int watched = series.vanished + series.live.size();
+		return watched <= 0 ? 0.0 : clamp(series.vanished / (double) watched);
 	}
 
 	private void expire(Series series, long now) {
@@ -182,17 +290,27 @@ public final class MarketModel {
 			series.samples.pollFirst();
 			dirty = true;
 		}
+		series.live.values().removeIf(listing -> now - listing.lastSeen() > SAMPLE_TTL_MS);
 	}
 
 	private static double median(List<Long> sorted) {
+		return quantile(sorted, 0.5);
+	}
+
+	/** The value a given way up a sorted list, interpolating between samples. */
+	private static double quantile(List<Long> sorted, double fraction) {
 		int size = sorted.size();
 		if (size == 0) {
 			return 0.0;
 		}
-		if (size % 2 == 1) {
-			return sorted.get(size / 2);
+		if (size == 1) {
+			return sorted.get(0);
 		}
-		return (sorted.get(size / 2 - 1) + sorted.get(size / 2)) / 2.0;
+		double position = fraction * (size - 1);
+		int below = (int) Math.floor(position);
+		int above = Math.min(size - 1, below + 1);
+		double between = position - below;
+		return sorted.get(below) * (1.0 - between) + sorted.get(above) * between;
 	}
 
 	private static double medianAbsoluteDeviation(List<Long> sorted, double median) {
@@ -221,9 +339,10 @@ public final class MarketModel {
 	/**
 	 * Read the price history back, so a session starts knowing the market.
 	 *
-	 * <p>One line per item: {@code appearances|price:age,price:age,...}, with
-	 * ages written relative to the save so a clock change cannot make every
-	 * sample look like it came from the future.
+	 * <p>One line per item:
+	 * {@code appearances;vanished;seller|seller;price:age,price:age}, with ages
+	 * written relative to the save so a clock change cannot make every sample
+	 * look like it came from the future.
 	 */
 	public void loadIfNeeded(Path source) {
 		if (loaded) {
@@ -256,24 +375,31 @@ public final class MarketModel {
 				continue;
 			}
 			String key = name.substring("item.".length());
-			Series series = new Series();
-			String[] halves = properties.getProperty(name).split("\\|", 2);
-			if (halves.length != 2) {
+			String[] parts = properties.getProperty(name).split(";", 4);
+			if (parts.length != 4) {
 				continue;
 			}
+
+			Series series = new Series();
 			try {
-				series.appearances = Integer.parseInt(halves[0].trim());
+				series.appearances = Integer.parseInt(parts[0].trim());
+				series.vanished = Integer.parseInt(parts[1].trim());
 			} catch (NumberFormatException exception) {
 				continue;
 			}
-			for (String entry : halves[1].split(",")) {
-				String[] parts = entry.split(":");
-				if (parts.length != 2) {
+			for (String seller : parts[2].split("\\|")) {
+				if (!seller.isBlank()) {
+					series.sellers.put(seller.trim(), now);
+				}
+			}
+			for (String entry : parts[3].split(",")) {
+				String[] sample = entry.split(":");
+				if (sample.length != 2) {
 					continue;
 				}
 				try {
-					long price = Long.parseLong(parts[0].trim());
-					long age = Long.parseLong(parts[1].trim());
+					long price = Long.parseLong(sample[0].trim());
+					long age = Long.parseLong(sample[1].trim());
 					if (price > 0 && age >= 0 && age < SAMPLE_TTL_MS) {
 						series.samples.addLast(new Sample(price, now - age));
 						series.lastSeen = Math.max(series.lastSeen, now - age);
@@ -308,7 +434,13 @@ public final class MarketModel {
 			if (series.samples.isEmpty()) {
 				continue;
 			}
-			StringBuilder line = new StringBuilder().append(series.appearances).append('|');
+			StringBuilder line = new StringBuilder()
+					.append(series.appearances)
+					.append(';')
+					.append(series.vanished)
+					.append(';')
+					.append(String.join("|", series.sellers.keySet()))
+					.append(';');
 			boolean first = true;
 			for (Sample sample : series.samples) {
 				if (!first) {

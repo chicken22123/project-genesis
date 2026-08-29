@@ -14,7 +14,8 @@ Three toggles come with it, in the Blueprint menu (Right Shift by default):
 | --- | --- | --- |
 | Auction Flipper | Economy | The whole loop: browse, price, buy, relist. |
 | Flip Dry Run | Economy | Safety catch. The flipper still prices everything and shows what it *would* buy, but never clicks buy or sell. |
-| Flip Stats | HUD | One line: stage, scans, flips, coins spent, expected profit. |
+| Flip Stats | HUD | One line: stage, scans, flips, money spent, expected profit. |
+
 
 **Switch Flip Dry Run on first.** It costs nothing and it is the only way to
 find out whether the wording defaults match your server. The FLIPPER button in
@@ -22,9 +23,10 @@ the menu's top bar opens everything below.
 
 ## Before you turn it on
 
-This plays the game for you. Hypixel and most other servers ban auction house
-macros, so running it puts the account at risk. That is the deal; it is not
-something the mod can soften.
+This plays the game for you. DonutSMP, like almost every server with an economy
+worth flipping in, bans auction house macros - so running it puts the account at
+risk. That is the deal; it is not something the mod can soften, and no amount of
+careful maths changes it.
 
 ## The loop
 
@@ -59,69 +61,101 @@ so those never get priced off each other. The lore is deliberately left out of
 that key, because the auction house writes the price and the seller into it, and
 it therefore differs on every listing of the same thing.
 
+## Why it will not buy your dirt
+
+The trap in an auction house is that **an asking price is not a sale price**.
+Anyone can list dirt for $2,000 and leave it there. A flipper that reads that as
+"dirt is worth $2,000" will happily pay $1,000 for dirt, congratulate itself on
+a 90% margin, and then own some dirt.
+
+So before the size of a margin is even looked at, the listing has to get past a
+row of gates, each asking for a different kind of evidence that the resale price
+is real:
+
+| Gate | What it asks | What it stops |
+| --- | --- | --- |
+| **Distinct listings** | Have several *different* listings of this item been seen? A listing is recognised by its price and its seller, so the same one on twenty refreshes counts once. | One planted listing looking like twenty pieces of evidence. |
+| **Different sellers** | Have at least two different people listed it? | One person listing the same lie ten times. Where the server does not show sellers, twice as many distinct listings are demanded instead. |
+| **Depth** | Are there copies on the page right now to undercut? | Buying something with no established price and no one to sell it against. |
+| **Churn** | Do listings of this item actually come and go? | A price that has sat untouched since it was first seen - which is a price nobody is paying. |
+| **Confidence and spread** | Is the evidence recent, plentiful and in agreement? | Trading on one stale sighting, or on a market that cannot decide. |
+
+The dirt in the example fails the first gate outright: twenty refreshes of one
+listing is one listing. If the same person lists it three times, it fails the
+second. If two people list it and nothing ever moves, it fails the third. That
+is three independent reasons it never gets bought, and the same three protect
+every other item on the page.
+
 ## The maths
 
-There is no price list to download. The only market data a client has is what
-the auction house shows it, so the model is built from the pages it reads.
+The fair value is not the average and it is not the middle. It is the price
+**thirty per cent of the way up the asks**, because selling something means
+beating the cheapest seller, not the average one. Optimistic prices sit in the
+tail above that and cannot drag it up; one desperate listing at the bottom
+cannot drag it down either.
 
-For each item it keeps the **cheapest listing seen per page**, which is the
-price a seller actually has to beat. From those samples:
+Spread is measured with the median absolute deviation - one silly listing cannot
+move it - and samples far enough out are dropped as outliers: three scaled
+deviations, or five per cent of the median, whichever is the wider net. The five
+per cent floor matters, because a few samples that happen to agree closely make
+the deviation tiny, and without it the next honest listing a couple of per cent
+away gets thrown out.
 
-- the **median** is the fair value, not the average - one fat-fingered listing
-  would drag an average a long way, and a flipper that believes a bad number
-  buys rubbish;
-- the **median absolute deviation** measures how tightly the market agrees;
-- samples far enough out are dropped as outliers - three scaled deviations, or
-  five per cent of the median, whichever is the wider net - and the median of
-  what is left becomes the fair value `v`. The five per cent floor matters: a
-  few samples that happen to agree closely make the deviation tiny, and without
-  it the next honest listing a couple of per cent away gets thrown out;
-- the leftover spread, `MAD / median`, is the **dispersion**.
-
-For a listing at price `p`, with the next cheapest copy on the same page at `c`:
+Then, for `count` of an item the model values at `v` each, with the cheapest
+rival copy on the page asking `competitor` each:
 
 ```
-resale = min(v, c) x (1 - undercut)     what it can realistically be sold for
-net    = resale x (1 - tax)             what actually lands in the purse
-profit = net - p
-margin = profit / p
-score  = profit x confidence x (0.5 + 0.5 x supply)
+ceiling = min(v, competitor)                    nobody pays more than the cheapest
+haircut = spread + (1 - churn) x stale discount how much of that to disbelieve
+sale    = ceiling x count x (1 - undercut) x (1 - haircut)
+net     = sale x (1 - tax)
+profit  = net - price
+margin  = profit / price
+score   = profit x confidence x (0.5 + 0.5 x supply)
 ```
 
-`confidence` is the model saying how much it means the number. Three things all
-have to be true for it to be high:
+**The haircut is the difference between a sum that looks profitable and one that
+is.** The resale estimate is cut by how much the market disagrees with itself
+and by how little it moves, so a sluggish item has to show a much bigger gap
+before it clears the margin test, while a busy item with a tight spread is
+barely touched at all.
+
+Confidence is the model saying how much it means the number, and every part of
+the evidence goes into it:
 
 ```
-confidence = n/(n+3) x exp(-age_minutes / 45) x (1 - dispersion)
-             enough        recent               market agrees
-             samples       samples              with itself
+confidence = n/(n+3) x exp(-age/45min) x (1 - spread) x sellers/(sellers+1)x1.5 x (0.4 + 0.6 x churn)
+             enough     recent           agreeing       from several people      in a market that moves
 ```
 
 Scoring by profit alone would keep picking the one enormous margin the model is
-least sure about, which is exactly the listing most likely to be a trap.
-Multiplying by confidence prefers the flip most likely to be real, and the
-supply term leans towards items that show up on most pages, because those are
-the ones that sell again quickly.
+least sure about - exactly the listing most likely to be bait. Multiplying by
+confidence prefers the flip most likely to be real, and the supply term leans
+towards items that appear on most pages, because those are the ones that sell on
+again quickly.
 
-Two guards sit on top:
+Two more guards sit on top: a margin above `flip.suspiciousMargin` (300% by
+default) is refused unless the item has `flip.trustedSamples` listings behind
+it, and `flip.minUnitValue` can rule out anything cheap outright.
 
-- a margin above `flip.suspiciousMargin` (300% by default) is refused unless the
-  item has at least `flip.trustedSamples` sightings - a margin that large
-  usually means two different items are sharing a name;
-- a dispersion above `flip.maxDispersion` is refused outright: the market has
-  not settled on a price, so there is no number to trade against.
+**It buys nothing for the first minute or two.** Each item needs several
+*distinct* listings, from different people, before it is priced at all, so the
+first stretch is spent watching. That is the model gathering evidence, not a
+fault. When it does buy, it says what the evidence was:
+
+```
+Buying 64x Diamond Block at $3.84m, reselling about $6.08m: +$2.24m (58%)
+ - 9 listings from 5 sellers, 62% of them moved, estimate cut 8%
+```
 
 While it works, the panel over the auction house shows the page as the maths
-sees it - `42 listings: 28 not priced yet, 11 too new, 3 worth buying` - which
-is the quickest way to tell a quiet market from a misconfigured one.
-
-**It buys nothing for the first minute or two.** Each item needs
-`flip.minSamples` sightings across separate pages before it will be priced, so
-the first stretch is spent watching. That is the model warming up, not a fault.
+sees it - `42 listings: 28 not priced yet, 9 only one seller, 3 nothing ever
+moves, 2 worth buying` - which is the quickest way to tell a quiet market from a
+misconfigured one.
 
 Prices seen are kept in `config/blueprintclient-market.properties` and reloaded
-next session, so the warm-up only really happens once. Samples older than six
-hours are dropped: they describe an older market.
+next session, so the evidence only has to be gathered once. Samples older than
+six hours are dropped: they describe an older market.
 
 ## Listing with /ah sell
 
@@ -187,10 +221,11 @@ they can be run without the game, the mappings or a Gradle build:
 blueprint-client-mod/tools/check-flip-math.sh
 ```
 
-It compiles five classes and runs 98 checks over them - what counts as a price,
+It compiles five classes and runs 127 checks over them - what counts as a price,
 what counts as the same item, how outliers are handled, what each verdict means,
-how a sell chain is read, and that nothing is bought before the market has been
-watched. Worth running
+how a sell chain is read, and - the ones worth reading - a whole section of bait
+scenarios: a planted listing seen twenty times, one person listing the same
+thing three times, a price nothing ever moves at. None of them are bought. Worth running
 after changing any of the numbers.
 
 ## Settings
@@ -224,8 +259,13 @@ it can also be edited by hand. Defaults suit a chest based auction house with a
 | `flip.stopAfterFlips` | `0` | Stop after this many flips; 0 means no limit. |
 | `flip.minProfit` | `100000` | Profit needed to bother with a flip. |
 | `flip.minMargin` | `0.12` | Profit as a fraction of the buy price. |
-| `flip.minConfidence` | `0.35` | How sure the model has to be. |
-| `flip.minSamples` | `3` | Sightings before an item is priced at all. |
+| `flip.minConfidence` | `0.30` | How sure the model has to be. |
+| `flip.minSamples` | `3` | Distinct listings before an item is priced at all. |
+| `flip.minSellers` | `2` | Different people who must have listed it. |
+| `flip.minDepth` | `2` | Copies that must be on the page to resell against. |
+| `flip.requireChurn` | `true` | Refuse items whose listings never come and go. |
+| `flip.churnHaircut` | `0.25` | How hard a market that never moves is disbelieved. |
+| `flip.minUnitValue` | `0` | Ignore anything worth less than this each. |
 | `flip.maxDispersion` | `0.35` | Refuse markets that disagree with themselves. |
 | `flip.suspiciousMargin` | `3.0` | Above this, demand `trustedSamples` first. |
 | `flip.trustedSamples` | `12` | Sightings that make a huge margin believable. |
@@ -247,7 +287,10 @@ first run, with **Flip Dry Run** on so nothing can be bought while you look:
 2. **Does it read the prices?** The panel says `N listings: ...`. If N is 0 the
    price wording is wrong; DonutSMP writes plain `$` amounts, which the defaults
    already read, but a changed layout would show up here first.
-3. **What is the sale tax?** `flip.saleTax` defaults to 5%. Set it to whatever
+3. **Does it see who is selling?** The buy message says "from N sellers". If
+   your listings never show a seller, the flipper silently asks for twice as
+   many distinct listings instead, which is slower but just as safe.
+4. **What is the sale tax?** `flip.saleTax` defaults to 5%. Set it to whatever
    the server actually takes - too low and every flip is worth slightly less
    than the maths thinks.
 

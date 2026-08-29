@@ -79,8 +79,18 @@ public final class FlipSettings {
 	/** What counts as worth buying. */
 	public long minProfit = 100_000L;
 	public double minMargin = 0.12;
-	public double minConfidence = 0.35;
+	public double minConfidence = 0.30;
 	public int minSamples = 3;
+	/** Different people who must have listed it. One person can list a lie ten times. */
+	public int minSellers = 2;
+	/** Copies that must be on the page to resell against. */
+	public int minDepth = 2;
+	/** Refuse items whose listings never come and go: nobody is paying that price. */
+	public boolean requireChurn = true;
+	/** How hard a market that never moves is disbelieved. */
+	public double churnHaircut = 0.25;
+	/** Ignore anything worth less than this each; 0 to consider everything. */
+	public long minUnitValue = 0L;
 	public double maxDispersion = 0.35;
 	/** A margin past this is a trap, not a bargain: same name, different item. */
 	public double suspiciousMargin = 3.0;
@@ -136,6 +146,11 @@ public final class FlipSettings {
 		minMargin = decimal(properties, "flip.minMargin", minMargin);
 		minConfidence = decimal(properties, "flip.minConfidence", minConfidence);
 		minSamples = (int) number(properties, "flip.minSamples", minSamples);
+		minSellers = (int) number(properties, "flip.minSellers", minSellers);
+		minDepth = (int) number(properties, "flip.minDepth", minDepth);
+		requireChurn = Boolean.parseBoolean(string(properties, "flip.requireChurn", Boolean.toString(requireChurn)));
+		churnHaircut = decimal(properties, "flip.churnHaircut", churnHaircut);
+		minUnitValue = number(properties, "flip.minUnitValue", minUnitValue);
 		maxDispersion = decimal(properties, "flip.maxDispersion", maxDispersion);
 		suspiciousMargin = decimal(properties, "flip.suspiciousMargin", suspiciousMargin);
 		trustedSamples = (int) number(properties, "flip.trustedSamples", trustedSamples);
@@ -173,6 +188,11 @@ public final class FlipSettings {
 		properties.setProperty("flip.minMargin", decimal(minMargin));
 		properties.setProperty("flip.minConfidence", decimal(minConfidence));
 		properties.setProperty("flip.minSamples", Integer.toString(minSamples));
+		properties.setProperty("flip.minSellers", Integer.toString(minSellers));
+		properties.setProperty("flip.minDepth", Integer.toString(minDepth));
+		properties.setProperty("flip.requireChurn", Boolean.toString(requireChurn));
+		properties.setProperty("flip.churnHaircut", decimal(churnHaircut));
+		properties.setProperty("flip.minUnitValue", Long.toString(minUnitValue));
 		properties.setProperty("flip.maxDispersion", decimal(maxDispersion));
 		properties.setProperty("flip.suspiciousMargin", decimal(suspiciousMargin));
 		properties.setProperty("flip.trustedSamples", Integer.toString(trustedSamples));

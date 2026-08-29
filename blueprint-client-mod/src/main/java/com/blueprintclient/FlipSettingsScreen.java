@@ -59,9 +59,11 @@ public class FlipSettingsScreen extends Screen {
 	private record Row(String label, String help, Kind kind, Supplier<String> get, Setter setter) {
 	}
 
+	private record Column(String title, List<Row> rows) {
+	}
+
 	private final Screen parent;
-	private final List<Row> money;
-	private final List<Row> server;
+	private final List<Column> columns;
 	private final List<Row> defaults;
 
 	private int editing = -1;
@@ -71,18 +73,50 @@ public class FlipSettingsScreen extends Screen {
 	public FlipSettingsScreen(Screen parent) {
 		super(Text.literal("Flipper Setup"));
 		this.parent = parent;
-		FlipSettings live = FlipSettings.get();
-		this.money = moneyRows(live);
-		this.server = serverRows(live);
+		this.columns = columnsFor(FlipSettings.get());
 		// A second, untouched set of settings, purely so a row knows what it
 		// looked like before anyone changed it.
-		FlipSettings fresh = FlipSettings.defaults();
 		this.defaults = new ArrayList<>();
-		this.defaults.addAll(moneyRows(fresh));
-		this.defaults.addAll(serverRows(fresh));
+		for (Column column : columnsFor(FlipSettings.defaults())) {
+			this.defaults.addAll(column.rows());
+		}
+	}
+
+	private static List<Column> columnsFor(FlipSettings settings) {
+		List<Column> columns = new ArrayList<>();
+		columns.add(new Column("EVIDENCE NEEDED", evidenceRows(settings)));
+		columns.add(new Column("MONEY", moneyRows(settings)));
+		columns.add(new Column("SERVER WORDING AND PACING", serverRows(settings)));
+		return columns;
 	}
 
 	// ------------------------------------------------------------------ rows
+
+	/** What has to be true about an item before its price is believed at all. */
+	private static List<Row> evidenceRows(FlipSettings settings) {
+		List<Row> rows = new ArrayList<>();
+		rows.add(number("Min listings seen", "Different listings of an item needed before it is priced.",
+				() -> (long) settings.minSamples, value -> settings.minSamples = (int) value));
+		rows.add(number("Min sellers", "Different people who must have listed it. One person can list a lie ten times.",
+				() -> (long) settings.minSellers, value -> settings.minSellers = (int) value));
+		rows.add(number("Min on the page", "Copies that must be on sale now to resell against.",
+				() -> (long) settings.minDepth, value -> settings.minDepth = (int) value));
+		rows.add(toggle("Needs to move", "Refuse items whose listings just sit there. Nobody pays those prices.",
+				() -> settings.requireChurn, value -> settings.requireChurn = value));
+		rows.add(percent("Stale discount", "How hard a market that never moves is disbelieved.",
+				() -> settings.churnHaircut, value -> settings.churnHaircut = value));
+		rows.add(percent("Min confidence", "How sure the price model has to be before it acts.",
+				() -> settings.minConfidence, value -> settings.minConfidence = value));
+		rows.add(percent("Max spread", "Refuse items whose price is all over the place.",
+				() -> settings.maxDispersion, value -> settings.maxDispersion = value));
+		rows.add(percent("Suspicious margin", "Above this a bargain needs far more evidence.",
+				() -> settings.suspiciousMargin, value -> settings.suspiciousMargin = value));
+		rows.add(number("Trusted listings", "Listings that make a huge margin believable.",
+				() -> (long) settings.trustedSamples, value -> settings.trustedSamples = (int) value));
+		rows.add(number("Ignore under", "Ignore anything worth less than this each. 0 considers everything.",
+				() -> settings.minUnitValue, value -> settings.minUnitValue = value));
+		return rows;
+	}
 
 	private static List<Row> moneyRows(FlipSettings settings) {
 		List<Row> rows = new ArrayList<>();
@@ -98,16 +132,6 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.minProfit, value -> settings.minProfit = value));
 		rows.add(percent("Min margin", "Profit as a share of what the item cost.",
 				() -> settings.minMargin, value -> settings.minMargin = value));
-		rows.add(percent("Min confidence", "How sure the price model has to be before it acts.",
-				() -> settings.minConfidence, value -> settings.minConfidence = value));
-		rows.add(number("Min sightings", "Times an item must be seen before it is priced at all.",
-				() -> (long) settings.minSamples, value -> settings.minSamples = (int) value));
-		rows.add(percent("Max spread", "Refuse items whose price is all over the place.",
-				() -> settings.maxDispersion, value -> settings.maxDispersion = value));
-		rows.add(percent("Suspicious margin", "Above this a bargain needs far more evidence.",
-				() -> settings.suspiciousMargin, value -> settings.suspiciousMargin = value));
-		rows.add(number("Trusted sightings", "Sightings that make a huge margin believable.",
-				() -> (long) settings.trustedSamples, value -> settings.trustedSamples = (int) value));
 		rows.add(percent("Sale tax", "The cut the auction house takes when something sells.",
 				() -> settings.saleTax, value -> settings.saleTax = value));
 		rows.add(percent("Undercut by", "How far under the cheapest rival to list.",
@@ -269,10 +293,12 @@ public class FlipSettingsScreen extends Screen {
 		button(context, doneX(), 8, doneWidth(), "DONE", mouseX, mouseY);
 		button(context, resetX(), 8, resetWidth(), "RESET ALL", mouseX, mouseY);
 
-		Row described = drawColumn(context, money, 0, "MONEY AND THRESHOLDS", mouseX, mouseY);
-		Row other = drawColumn(context, server, 1, "SERVER WORDING AND PACING", mouseX, mouseY);
-		if (other != null) {
-			described = other;
+		Row described = null;
+		for (int column = 0; column < columns.size(); column++) {
+			Row hovered = drawColumn(context, column, mouseX, mouseY);
+			if (hovered != null) {
+				described = hovered;
+			}
 		}
 		if (editing >= 0) {
 			described = row(editing);
@@ -291,7 +317,9 @@ public class FlipSettingsScreen extends Screen {
 	}
 
 	/** Draws one column and returns the row under the pointer, if any. */
-	private Row drawColumn(DrawContext context, List<Row> rows, int column, String title, int mouseX, int mouseY) {
+	private Row drawColumn(DrawContext context, int column, int mouseX, int mouseY) {
+		List<Row> rows = columns.get(column).rows();
+		String title = columns.get(column).title();
 		int x = columnX(column);
 		int width = columnWidth();
 		int y = topY();
@@ -305,7 +333,7 @@ public class FlipSettingsScreen extends Screen {
 		int rowY = y + HEADER_HEIGHT + 2;
 		for (int i = 0; i < rows.size(); i++) {
 			Row row = rows.get(i);
-			int index = column == 0 ? i : money.size() + i;
+			int index = globalIndex(column, i);
 			boolean over = inside(mouseX, mouseY, x, rowY, width, ROW_HEIGHT);
 			if (over) {
 				context.fill(x, rowY, x + width, rowY + ROW_HEIGHT, ROW_HOVER);
@@ -361,11 +389,13 @@ public class FlipSettingsScreen extends Screen {
 	// ---------------------------------------------------------------- layout
 
 	private int columnWidth() {
-		return Math.min(MAX_COLUMN, (this.width - 20 - COLUMN_GAP) / 2);
+		int count = columns.size();
+		return Math.min(MAX_COLUMN, (this.width - 20 - COLUMN_GAP * (count - 1)) / count);
 	}
 
 	private int columnX(int column) {
-		int total = columnWidth() * 2 + COLUMN_GAP;
+		int count = columns.size();
+		int total = columnWidth() * count + COLUMN_GAP * (count - 1);
 		return (this.width - total) / 2 + column * (columnWidth() + COLUMN_GAP);
 	}
 
@@ -389,8 +419,32 @@ public class FlipSettingsScreen extends Screen {
 		return doneX() - resetWidth() - 8;
 	}
 
+	/** Rows are numbered straight through the columns, left to right. */
+	private int globalIndex(int column, int rowInColumn) {
+		int index = rowInColumn;
+		for (int before = 0; before < column; before++) {
+			index += columns.get(before).rows().size();
+		}
+		return index;
+	}
+
+	private int rowCount() {
+		int total = 0;
+		for (Column column : columns) {
+			total += column.rows().size();
+		}
+		return total;
+	}
+
 	private Row row(int index) {
-		return index < money.size() ? money.get(index) : server.get(index - money.size());
+		int remaining = index;
+		for (Column column : columns) {
+			if (remaining < column.rows().size()) {
+				return column.rows().get(remaining);
+			}
+			remaining -= column.rows().size();
+		}
+		return columns.get(columns.size() - 1).rows().get(0);
 	}
 
 	private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {
@@ -409,20 +463,20 @@ public class FlipSettingsScreen extends Screen {
 			return true;
 		}
 		if (inside(mouseX, mouseY, resetX(), 8, resetWidth(), BUTTON_HEIGHT)) {
-			for (int index = 0; index < money.size() + server.size(); index++) {
+			for (int index = 0; index < rowCount(); index++) {
 				row(index).setter().set(defaults.get(index).get().get());
 			}
 			stopEditing();
 			return true;
 		}
 
-		for (int column = 0; column < 2; column++) {
-			List<Row> rows = column == 0 ? money : server;
+		for (int column = 0; column < columns.size(); column++) {
+			List<Row> rows = columns.get(column).rows();
 			int x = columnX(column);
 			int rowY = topY() + HEADER_HEIGHT + 2;
 			for (int i = 0; i < rows.size(); i++) {
 				if (inside(mouseX, mouseY, x, rowY, columnWidth(), ROW_HEIGHT)) {
-					int index = column == 0 ? i : money.size() + i;
+					int index = globalIndex(column, i);
 					if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
 						row(index).setter().set(defaults.get(index).get().get());
 						stopEditing();

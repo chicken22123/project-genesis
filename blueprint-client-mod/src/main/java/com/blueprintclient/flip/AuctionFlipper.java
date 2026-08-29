@@ -253,10 +253,14 @@ public final class AuctionFlipper extends Module {
 		long signature = scan.signature();
 		if (scan.listingCount() > 0 && signature != lastPageSignature) {
 			lastPageSignature = signature;
-			market.noteScan();
-			for (AuctionScan.Listing listing : scan.listings()) {
-				market.observe(listing.key(), listing.unitPrice(), now);
+			market.beginScan();
+			// Every listing, not just the cheapest: how many people are selling
+			// a thing, and whether their listings come and go, is as much of the
+			// evidence as the prices are.
+			for (AuctionScan.Listing listing : scan.everything()) {
+				market.observe(listing.key(), listing.unitPrice(), listing.seller(), now);
 			}
+			market.endScan(now);
 			scans++;
 		}
 
@@ -271,14 +275,20 @@ public final class AuctionFlipper extends Module {
 			clickedSlots.clear();
 			click(client, handler, best.slotId());
 			status = "buying " + best.display() + " for " + money(best.price());
+			MarketModel.Appraisal evidence = market.appraise(best.key(), now);
 			tell(client, String.format(
 					Locale.ROOT,
-					"Buying %s at %s - worth about %s, margin %.0f%% (confidence %.0f%%)",
+					"Buying %s at %s, reselling about %s: +%s (%.0f%%) - %d listings from %d sellers, "
+							+ "%.0f%% of them moved, estimate cut %.0f%%",
 					best.display(),
 					money(best.price()),
 					money(best.assessment().sale()),
+					money(best.assessment().profit()),
 					best.assessment().margin() * 100.0,
-					best.assessment().confidence() * 100.0));
+					evidence.samples(),
+					evidence.sellers(),
+					evidence.churn() * 100.0,
+					best.assessment().haircut() * 100.0));
 			enter(Stage.BUYING, now);
 			delay(now, settings.actionDelayMs);
 			return;
@@ -573,7 +583,12 @@ public final class AuctionFlipper extends Module {
 		for (AuctionScan.Listing listing : scan.listings()) {
 			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
 			FlipMath.Assessment assessment = FlipMath.assess(
-					listing.price(), listing.count(), scan.competitor(listing.key()), appraisal, settings);
+					listing.price(),
+					listing.count(),
+					scan.competitor(listing.key()),
+					scan.depth(listing.key()),
+					appraisal,
+					settings);
 			tally.merge(assessment.verdict(), 1, Integer::sum);
 			if (assessment.worthBuying()) {
 				found.add(new Candidate(

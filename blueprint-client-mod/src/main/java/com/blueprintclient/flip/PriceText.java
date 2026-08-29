@@ -30,6 +30,9 @@ public final class PriceText {
 	private static final Pattern PUNCTUATION = Pattern.compile("[^a-z0-9 +'-]");
 	private static final Pattern SPACES = Pattern.compile("\\s+");
 	private static final Pattern RARITY = Pattern.compile("^[A-Z][A-Z ]{2,31}$");
+	// "Seller: Notch", "Sold by Notch", "Listed by Notch".
+	private static final Pattern SELLER = Pattern.compile(
+			"(?i)\\b(?:seller|sold by|listed by|owner)\\b\\s*:?\\s*([A-Za-z0-9_]{3,16})");
 
 	private PriceText() {
 	}
@@ -100,6 +103,22 @@ public final class PriceText {
 			String line = lore.get(i);
 			if (RARITY.matcher(line).matches()) {
 				return normalize(line);
+			}
+		}
+		return "";
+	}
+
+	/**
+	 * Who has this listed, or empty when the auction house does not say.
+	 *
+	 * <p>It matters because one person listing the same thing ten times is one
+	 * opinion about the price, and ten people listing it once each is a market.
+	 */
+	public static String seller(List<String> lore) {
+		for (String line : lore) {
+			Matcher matcher = SELLER.matcher(line);
+			if (matcher.find()) {
+				return matcher.group(1).toLowerCase(Locale.ROOT);
 			}
 		}
 		return "";
