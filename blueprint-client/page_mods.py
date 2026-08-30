@@ -9,6 +9,7 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import blueprint_mod
 import modrinth_data
 import recycle
 import theme
@@ -22,6 +23,7 @@ class ModsPage(tk.Frame):
         self.instance = {}
         self.loaded = False
         self.loading = False
+        self.building = False
         self._pending_added = []
         self._keep_status = False
 
@@ -86,6 +88,10 @@ class ModsPage(tk.Frame):
         actions = theme.frame(panel, bg=theme.PANEL_BG)
         actions.pack(fill="x", padx=18, pady=(12, 16))
         theme.button(actions, "Add Mods...", self.add_mods, kind="primary").pack(side="left")
+        self.blueprint_button = theme.button(
+            actions, "Install Blueprint Mod", self.install_blueprint_mod, width=20
+        )
+        self.blueprint_button.pack(side="left", padx=(8, 0))
         self.toggle_button = theme.button(actions, "Disable", self.toggle_selected, width=10)
         self.toggle_button.pack(side="left", padx=(8, 0))
         self.remove_button = theme.button(
@@ -233,6 +239,65 @@ class ModsPage(tk.Frame):
             self._set_status(f"{what} {state}. Restart Minecraft for it to take effect.", theme.OK)
 
     # ------------------------------------------------------- add and remove
+
+    def install_blueprint_mod(self):
+        """Build the Blueprint mod from the source beside the launcher, and install it.
+
+        The point of the button is that this is otherwise a JDK, a Gradle
+        invocation and a copy into a folder six levels deep in AppData.
+        """
+        if self.building:
+            return
+        if not self.instance.get("path"):
+            self._set_status("Pick an instance on the Instances page first.", theme.ERROR)
+            return
+        if not blueprint_mod.available():
+            self._set_status(blueprint_mod.describe(), theme.ERROR)
+            return
+
+        building = blueprint_mod.needs_build()
+        self.building = True
+        theme.set_button_enabled(self.blueprint_button, False)
+        self._set_status(
+            "Building the mod - the first build fetches Minecraft and takes a few minutes..."
+            if building
+            else "Installing the mod...",
+            theme.MUTED,
+        )
+
+        instance_path = self.instance.get("path", "")
+
+        def work():
+            jar = blueprint_mod.ensure_jar()
+            added, _conflicts, errors = modrinth_data.install_mods(
+                instance_path, [jar], replace=True
+            )
+            return jar, added, errors
+
+        self.app.run_async(work, self._on_blueprint_installed)
+
+    def _on_blueprint_installed(self, result, error):
+        self.building = False
+        theme.set_button_enabled(self.blueprint_button, True)
+
+        if isinstance(error, blueprint_mod.BuildError):
+            # The end of the build log is where Gradle says what it disliked.
+            messagebox.showerror(
+                "The mod did not build",
+                f"{error}\n\n{error.output}" if error.output else str(error),
+                parent=self,
+            )
+            self._set_status(str(error).splitlines()[0], theme.ERROR)
+            return
+        if error is not None:
+            self._set_status(str(error), theme.ERROR)
+            return
+
+        _jar, added, errors = result
+        if added:
+            self.load(refresh=True, keep_status=True)
+            self.app.refresh_summary()
+        self._report(added, errors, verb="Installed")
 
     def add_mods(self):
         if not self.instance.get("path"):
