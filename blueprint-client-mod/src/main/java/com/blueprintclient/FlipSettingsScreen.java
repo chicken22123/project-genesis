@@ -114,6 +114,8 @@ public class FlipSettingsScreen extends Screen {
 	/** What has to be true about an item before its price is believed at all. */
 	private static List<Row> evidenceRows(FlipSettings settings) {
 		List<Row> rows = new ArrayList<>();
+		rows.add(number("Pages per sweep", "Pages to walk before judging. One page of a busy auction house is not a market.",
+				() -> (long) settings.pagesPerSweep, value -> settings.pagesPerSweep = (int) value));
 		rows.add(number("Min listings seen", "Different listings of an item needed before it is priced.",
 				() -> (long) settings.minSamples, value -> settings.minSamples = (int) value));
 		rows.add(number("Min sellers", "Different people who must have listed it. One person can list a lie ten times.",
@@ -170,6 +172,8 @@ public class FlipSettingsScreen extends Screen {
 				() -> settings.buyButtons, value -> settings.buyButtons = value));
 		rows.add(words("Sell buttons", "Item names that finish a listing.",
 				() -> settings.sellButtons, value -> settings.sellButtons = value));
+		rows.add(words("Next page buttons", "Item names that turn to the next page of listings.",
+				() -> settings.nextPageButtons, value -> settings.nextPageButtons = value));
 		rows.add(words("Refresh buttons", "Names that reload the page. Any anvil counts too.",
 				() -> settings.refreshButtons, value -> settings.refreshButtons = value));
 		rows.add(words("Bought wording", "Chat wording that means the purchase worked.",

@@ -21,21 +21,8 @@ import java.util.Map;
  * single pass over the slots.
  */
 public final class AuctionScan {
-	/**
-	 * A fixed price item on the page.
-	 *
-	 * <p>Auction houses sell stacks, so the price on the listing and the price
-	 * of the thing are not the same number. {@code price} is what the listing
-	 * costs; {@code unitPrice} is what one of them costs, and that is what the
-	 * market is measured in - otherwise a stack of sixty four looks like a
-	 * wildly overpriced single.
-	 */
-	public record Listing(
-			int slotId, String key, String display, long price, int count, long unitPrice, String seller) {
-	}
-
-	private final List<Listing> all = new ArrayList<>();
-	private final Map<String, Listing> cheapest = new HashMap<>();
+	private final List<AuctionListing> all = new ArrayList<>();
+	private final Map<String, AuctionListing> cheapest = new HashMap<>();
 	private final Map<String, Long> runnerUp = new HashMap<>();
 	private final Map<String, Integer> depth = new HashMap<>();
 	private int refreshSlot = -1;
@@ -57,11 +44,16 @@ public final class AuctionScan {
 				continue;
 			}
 
-			if (scan.refreshSlot < 0 && isRefresh(stack, settings)) {
+			long price = AuctionParser.buyItNowPrice(stack, settings.binOnly);
+
+			// Buttons come first, and only things with no price on them can be
+			// buttons. An anvil is the reload button on most auction houses -
+			// and it is also an item people sell, so an anvil with a price is a
+			// listing and clicking it buys it.
+			if (scan.refreshSlot < 0 && price <= 0 && isRefresh(stack, settings)) {
 				scan.refreshSlot = slot.id;
 			}
 
-			long price = AuctionParser.buyItNowPrice(stack, settings.binOnly);
 			if (price <= 0) {
 				continue;
 			}
@@ -73,13 +65,13 @@ public final class AuctionScan {
 			int count = Math.max(1, stack.getCount());
 			long unitPrice = Math.max(1L, price / count);
 			String display = (count > 1 ? count + "x " : "") + AuctionParser.plain(stack.getName());
-			Listing listing =
-					new Listing(slot.id, key, display, price, count, unitPrice, AuctionParser.seller(stack));
+			AuctionListing listing =
+					new AuctionListing(slot.id, key, display, price, count, unitPrice, AuctionParser.seller(stack));
 
 			scan.listingCount++;
 			scan.all.add(listing);
 			scan.depth.merge(key, 1, Integer::sum);
-			Listing best = scan.cheapest.get(key);
+			AuctionListing best = scan.cheapest.get(key);
 			if (best == null || unitPrice < best.unitPrice()) {
 				if (best != null) {
 					scan.runnerUp.put(key, best.unitPrice());
@@ -96,7 +88,12 @@ public final class AuctionScan {
 		return scan;
 	}
 
-	/** The button that reloads the page: an anvil, or something named like one. */
+	/**
+	 * The button that reloads the page: an anvil, or something named like one.
+	 *
+	 * <p>Only ever asked about items with no price, because the anvil on the
+	 * bottom row and the anvil somebody is selling look identical otherwise.
+	 */
 	private static boolean isRefresh(ItemStack stack, FlipSettings settings) {
 		if (stack.isOf(Items.ANVIL) || stack.isOf(Items.CHIPPED_ANVIL) || stack.isOf(Items.DAMAGED_ANVIL)) {
 			return true;
@@ -105,12 +102,12 @@ public final class AuctionScan {
 	}
 
 	/** The cheapest listing of each item on this page: the only ones worth buying. */
-	public List<Listing> listings() {
+	public List<AuctionListing> listings() {
 		return new ArrayList<>(cheapest.values());
 	}
 
 	/** Every listing on the page, which is what the market is measured from. */
-	public List<Listing> everything() {
+	public List<AuctionListing> everything() {
 		return Collections.unmodifiableList(all);
 	}
 
@@ -139,7 +136,7 @@ public final class AuctionScan {
 	/** A cheap fingerprint of the page, for spotting a reload that changed nothing. */
 	public long signature() {
 		long value = listingCount;
-		for (Listing listing : cheapest.values()) {
+		for (AuctionListing listing : cheapest.values()) {
 			value += listing.key().hashCode() * 31L + listing.price() + listing.count();
 		}
 		return value;

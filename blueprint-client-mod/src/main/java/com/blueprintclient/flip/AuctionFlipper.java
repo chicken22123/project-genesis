@@ -95,6 +95,8 @@ public final class AuctionFlipper extends Module {
 	private Candidate pending;
 	private int pendingCountBefore;
 	private String pauseReason;
+	private AuctionBoard board;
+	private int sweepPage;
 	private Object connection;
 	private long startedAt;
 	private int recoveries;
@@ -166,6 +168,8 @@ public final class AuctionFlipper extends Module {
 
 	@Override
 	protected void onDisable(MinecraftClient client) {
+		board = null;
+		sweepPage = 0;
 		market.save();
 		boolean stopped = stage == Stage.STOPPED;
 		stage = Stage.OFF;
@@ -277,22 +281,28 @@ public final class AuctionFlipper extends Module {
 		// whatever went wrong earlier in the session is behind us.
 		errors = 0;
 
-		AuctionScan scan = AuctionScan.of(handler, settings);
-		// Reading the same page twice - the reload was rate limited, or the
-		// server sent the same listings back - would count as two independent
-		// sightings and let one page pull the median towards itself.
-		long signature = scan.signature();
-		if (scan.listingCount() > 0 && signature != lastPageSignature) {
-			lastPageSignature = signature;
+		if (board == null) {
+			// A sweep is several pages read as one look at the market.
+			board = new AuctionBoard();
+			sweepPage = 0;
 			market.beginScan();
+		}
+
+		AuctionScan scan = AuctionScan.of(handler, settings);
+		// Reading the same page twice - the reload was rate limited, the next
+		// page button did nothing - would count as two independent sightings
+		// and let one page pull the median towards itself.
+		long signature = scan.signature();
+		boolean fresh = scan.listingCount() > 0 && signature != lastPageSignature;
+		if (fresh) {
+			lastPageSignature = signature;
+			board.add(scan.everything());
 			// Every listing, not just the cheapest: how many people are selling
 			// a thing, and whether their listings come and go, is as much of the
 			// evidence as the prices are.
-			for (AuctionScan.Listing listing : scan.everything()) {
+			for (AuctionListing listing : scan.everything()) {
 				market.observe(listing.key(), listing.unitPrice(), listing.seller(), now);
 			}
-			market.endScan(now);
-			scans++;
 		}
 
 		// Checked every page, so the moment room is made or the budget is
@@ -306,6 +316,7 @@ public final class AuctionFlipper extends Module {
 		}
 
 		Candidate best = evaluate(scan, now);
+
 		if (best != null && !dryRun && pauseReason == null && affordable(best)) {
 			pending = best;
 			pendingCountBefore = inventoryCount(client, best.key());
@@ -326,6 +337,7 @@ public final class AuctionFlipper extends Module {
 					evidence.sellers(),
 					evidence.churn() * 100.0,
 					best.assessment().haircut() * 100.0));
+			endSweep(now);
 			enter(Stage.BUYING, now);
 			delay(now, settings.buyDelayMs);
 			return;
@@ -341,7 +353,37 @@ public final class AuctionFlipper extends Module {
 			status = "watching - " + market.describe();
 		}
 
+		// On to the next page, and only once the sweep is done, back to the top.
+		if (fresh && sweepPage + 1 < Math.max(1, settings.pagesPerSweep)) {
+			int nextPage = findNavigationButton(handler, settings.nextPageButtons);
+			if (nextPage >= 0) {
+				sweepPage++;
+				status = String.format(
+						Locale.ROOT,
+						"reading page %d of %d - %d listings so far",
+						sweepPage + 1,
+						settings.pagesPerSweep,
+						board.listingCount());
+				click(client, handler, nextPage);
+				delay(now, settings.actionDelayMs);
+				return;
+			}
+		}
+
+		endSweep(now);
 		refresh(client, handler, scan, now);
+	}
+
+	/** Finish a sweep: the market has now had one full look at it. */
+	private void endSweep(long now) {
+		if (board == null) {
+			return;
+		}
+		market.endScan(now);
+		scans++;
+		board = null;
+		sweepPage = 0;
+		lastPageSignature = 0L;
 	}
 
 	/** Reload the page through the anvil, or reopen the browser if there is no anvil. */
@@ -731,14 +773,14 @@ public final class AuctionFlipper extends Module {
 		List<Candidate> found = new ArrayList<>();
 		Map<FlipMath.Verdict, Integer> tally = new EnumMap<>(FlipMath.Verdict.class);
 
-		for (AuctionScan.Listing listing : scan.listings()) {
+		for (AuctionListing listing : scan.listings()) {
 			MarketModel.Appraisal appraisal = market.appraise(listing.key(), now);
 			FlipMath.Assessment assessment = FlipMath.assess(
 					listing.display(),
 					listing.price(),
 					listing.count(),
-					scan.competitor(listing.key()),
-					scan.depth(listing.key()),
+					competitorFor(listing),
+					board == null ? scan.depth(listing.key()) : board.depth(listing.key()),
 					appraisal,
 					settings);
 			tally.merge(assessment.verdict(), 1, Integer::sum);
@@ -751,7 +793,7 @@ public final class AuctionFlipper extends Module {
 		found.sort((left, right) -> Double.compare(right.assessment().score(), left.assessment().score()));
 
 		report.clear();
-		report.add(summarise(scan.listingCount(), tally));
+		report.add(summarise(board == null ? scan.listingCount() : board.listingCount(), tally));
 		for (int i = 0; i < Math.min(REPORT_LINES, found.size()); i++) {
 			Candidate candidate = found.get(i);
 			report.add(FlipMath.explain(
@@ -770,6 +812,21 @@ public final class AuctionFlipper extends Module {
 			first = false;
 		}
 		return line.toString();
+	}
+
+	/**
+	 * The cheapest rival copy anywhere in the sweep.
+	 *
+	 * <p>If this listing is the cheapest of them, the price to beat is the next
+	 * one up. If something cheaper is sitting a page away, that is what a buyer
+	 * takes first, so that is the price to beat instead.
+	 */
+	private long competitorFor(AuctionListing listing) {
+		if (board == null) {
+			return 0L;
+		}
+		long cheapest = board.cheapest(listing.key());
+		return listing.unitPrice() <= cheapest ? board.competitor(listing.key()) : cheapest;
 	}
 
 	private boolean affordable(Candidate candidate) {
@@ -800,6 +857,29 @@ public final class AuctionFlipper extends Module {
 		}
 		click(client, handler, slotId);
 		return true;
+	}
+
+	/**
+	 * A navigation button: named right, and with no price on it.
+	 *
+	 * <p>Buying and confirming buttons do carry a price - that is the point of
+	 * them - but a next page arrow does not, and an item that does is somebody's
+	 * listing wearing a similar name.
+	 */
+	private int findNavigationButton(ScreenHandler handler, List<String> names) {
+		for (Slot slot : handler.slots) {
+			if (slot.inventory instanceof PlayerInventory) {
+				continue;
+			}
+			ItemStack stack = slot.getStack();
+			if (stack.isEmpty() || AuctionParser.buyItNowPrice(stack, settings.binOnly) > 0) {
+				continue;
+			}
+			if (AuctionParser.isButton(stack, names)) {
+				return slot.id;
+			}
+		}
+		return -1;
 	}
 
 	private int findButton(ScreenHandler handler, List<String> names) {

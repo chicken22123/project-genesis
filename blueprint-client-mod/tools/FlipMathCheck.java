@@ -1,3 +1,5 @@
+import com.blueprintclient.flip.AuctionBoard;
+import com.blueprintclient.flip.AuctionListing;
 import com.blueprintclient.flip.FlipMath;
 import com.blueprintclient.flip.FlipSettings;
 import com.blueprintclient.flip.ItemRules;
@@ -28,6 +30,8 @@ public final class FlipMathCheck {
 		formatting();
 		priceModel();
 		evidence();
+		sweeps();
+		buttonsAreNotListings();
 		bait();
 		shopping();
 		shoppingLists();
@@ -393,6 +397,65 @@ public final class FlipMathCheck {
 		equal("a star at the end", true, globs.blocked("Shulker Box"));
 		equal("stars at both ends", true, globs.blocked("A Very Sharp Sword Indeed"));
 		equal("and no false friends", false, globs.blocked("Spawn Egg Recipe Book") && globs.blocked("Bread"));
+	}
+
+	/** Several pages read as one look at the market. */
+	private static void sweeps() {
+		section("sweeping pages");
+
+		AuctionBoard board = new AuctionBoard();
+		board.add(List.of(listing(11, "netherite", 100_000L), listing(12, "lever", 1_000L)));
+		board.add(List.of(listing(21, "netherite", 90_000L)));
+		board.add(List.of(listing(31, "netherite", 120_000L), listing(32, "lever", 900L)));
+
+		equal("every page counts towards the total", 5, board.listingCount());
+		equal("three copies across three pages", 3, board.depth("netherite"));
+		equal("the cheapest anywhere in the sweep", 90_000L, board.cheapest("netherite"));
+		equal("and the price that would have to be beaten", 100_000L, board.competitor("netherite"));
+		equal("an item on one page only", 2, board.depth("lever"));
+		equal("nothing known about what was never seen", 0, board.depth("bread"));
+		equal("nor a price to beat for a single copy", 0L, board.competitor("bread"));
+
+		// One page of a busy auction house is not a market; six of them can be.
+		AuctionBoard onePage = new AuctionBoard();
+		onePage.add(List.of(listing(11, "netherite", 100_000L)));
+		FlipSettings settings = testSettings();
+		equal(
+				"one copy is not enough to trade against",
+				FlipMath.Verdict.THIN_MARKET,
+				FlipMath.assess("Netherite", 40_000L, 1, onePage.competitor("netherite"),
+								onePage.depth("netherite"), appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings)
+						.verdict());
+		equal(
+				"the same item across a sweep is",
+				FlipMath.Verdict.BUY,
+				FlipMath.assess("Netherite", 40_000L, 1, board.competitor("netherite"),
+								board.depth("netherite"), appraisal(100_000L, 0.0, 0.8, 10, 1.0), settings)
+						.verdict());
+	}
+
+	private static AuctionListing listing(int slot, String key, long unitPrice) {
+		return new AuctionListing(slot, key, key, unitPrice, 1, unitPrice, "seller" + slot);
+	}
+
+	/** The anvil is the reload button and also a thing people sell. */
+	private static void buttonsAreNotListings() {
+		section("buttons and listings");
+
+		// What the page reader is told apart by: a button carries no price.
+		equal("a reload button has nothing to buy",
+				-1L, PriceText.buyItNowPrice(List.of("Click to reload the page"), true));
+		equal("an anvil somebody is selling does",
+				1_500_000L, PriceText.buyItNowPrice(List.of("Seller: Notch", "$1,500,000"), true));
+
+		FlipSettings settings = testSettings();
+		settings.neverBuy = FlipSettings.defaults().neverBuy;
+		equal(
+				"and the shipped list keeps the flipper off anvils either way",
+				FlipMath.Verdict.BLOCKED,
+				FlipMath.assess("Anvil", 1_500_000L, 1, 0L, 5, appraisal(9_000_000L, 0.0, 0.8, 20, 1.0), settings)
+						.verdict());
+		settings.neverBuy = "";
 	}
 
 	private static void modelPersistence() throws Exception {

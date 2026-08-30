@@ -14,6 +14,8 @@ javac -d "$out" \
 	"$root/src/main/java/com/blueprintclient/flip/PriceText.java" \
 	"$root/src/main/java/com/blueprintclient/flip/MarketModel.java" \
 	"$root/src/main/java/com/blueprintclient/flip/FlipSettings.java" \
+	"$root/src/main/java/com/blueprintclient/flip/AuctionListing.java" \
+	"$root/src/main/java/com/blueprintclient/flip/AuctionBoard.java" \
 	"$root/src/main/java/com/blueprintclient/flip/ItemRules.java" \
 	"$root/src/main/java/com/blueprintclient/flip/FlipMath.java" \
 	"$root/src/main/java/com/blueprintclient/flip/SellFlow.java" \

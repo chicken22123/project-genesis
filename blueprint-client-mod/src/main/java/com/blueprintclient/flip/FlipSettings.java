@@ -42,6 +42,8 @@ public final class FlipSettings {
 	public List<String> sellButtons = list("confirm", "create auction", "list item", "accept", "yes");
 	/** Item names, other than an anvil, that reload the page. */
 	public List<String> refreshButtons = list("refresh", "reload", "update");
+	/** Item names that turn to the next page of listings. */
+	public List<String> nextPageButtons = list("next page", "next", "forward", "more");
 
 	/** Chat wording that means the purchase went through, or did not. */
 	public List<String> boughtMessages =
@@ -72,7 +74,12 @@ public final class FlipSettings {
 			list("auction started", "you listed", "you have listed", "put up for auction", "listed for", "now selling");
 
 	/** Items never to buy, whatever the maths says. A whole phrase, or a {@code *} glob. */
-	public String neverBuy = "dirt, cobblestone";
+	/**
+	 * Anvil is in there for a reason: it is the reload button on most auction
+	 * houses, so a mis-read of the page is most likely to go wrong on that one
+	 * item. Take it out if you actually want to flip anvils.
+	 */
+	public String neverBuy = "dirt, cobblestone, anvil";
 	/** When set, the only items to buy. Empty means everything else is fair game. */
 	public String onlyBuy = "";
 	/** Per item price ranges: {@code diamond block: 100k-5m, elytra: 2m-}. The price of one. */
@@ -94,6 +101,15 @@ public final class FlipSettings {
 	public double minMargin = 0.12;
 	public double minConfidence = 0.30;
 	public int minSamples = 3;
+	/**
+	 * Pages to walk before judging the market.
+	 *
+	 * <p>A busy auction house opens on whatever was listed most recently, which
+	 * is mostly junk, and the same item rarely appears twice on it. Reading one
+	 * page over and over is how the flipper ends up watching levers all day
+	 * without ever gathering enough evidence to buy anything.
+	 */
+	public int pagesPerSweep = 6;
 	/** Different people who must have listed it. One person can list a lie ten times. */
 	public int minSellers = 2;
 	/** Copies that must be on the page to resell against. */
@@ -160,6 +176,7 @@ public final class FlipSettings {
 		buyButtons = words(properties, "flip.buyButtons", buyButtons);
 		sellButtons = words(properties, "flip.sellButtons", sellButtons);
 		refreshButtons = words(properties, "flip.refreshButtons", refreshButtons);
+		nextPageButtons = words(properties, "flip.nextPageButtons", nextPageButtons);
 		boughtMessages = words(properties, "flip.boughtMessages", boughtMessages);
 		buyFailedMessages = words(properties, "flip.buyFailedMessages", buyFailedMessages);
 		listedMessages = words(properties, "flip.listedMessages", listedMessages);
@@ -177,6 +194,7 @@ public final class FlipSettings {
 		minMargin = decimal(properties, "flip.minMargin", minMargin);
 		minConfidence = decimal(properties, "flip.minConfidence", minConfidence);
 		minSamples = (int) number(properties, "flip.minSamples", minSamples);
+		pagesPerSweep = (int) number(properties, "flip.pagesPerSweep", pagesPerSweep);
 		minSellers = (int) number(properties, "flip.minSellers", minSellers);
 		minDepth = (int) number(properties, "flip.minDepth", minDepth);
 		requireChurn = Boolean.parseBoolean(string(properties, "flip.requireChurn", Boolean.toString(requireChurn)));
@@ -208,6 +226,7 @@ public final class FlipSettings {
 		properties.setProperty("flip.buyButtons", String.join(",", buyButtons));
 		properties.setProperty("flip.sellButtons", String.join(",", sellButtons));
 		properties.setProperty("flip.refreshButtons", String.join(",", refreshButtons));
+		properties.setProperty("flip.nextPageButtons", String.join(",", nextPageButtons));
 		properties.setProperty("flip.boughtMessages", String.join(",", boughtMessages));
 		properties.setProperty("flip.buyFailedMessages", String.join(",", buyFailedMessages));
 		properties.setProperty("flip.listedMessages", String.join(",", listedMessages));
@@ -225,6 +244,7 @@ public final class FlipSettings {
 		properties.setProperty("flip.minMargin", decimal(minMargin));
 		properties.setProperty("flip.minConfidence", decimal(minConfidence));
 		properties.setProperty("flip.minSamples", Integer.toString(minSamples));
+		properties.setProperty("flip.pagesPerSweep", Integer.toString(pagesPerSweep));
 		properties.setProperty("flip.minSellers", Integer.toString(minSellers));
 		properties.setProperty("flip.minDepth", Integer.toString(minDepth));
 		properties.setProperty("flip.requireChurn", Boolean.toString(requireChurn));
