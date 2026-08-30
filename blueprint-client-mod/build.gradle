@@ -1,5 +1,8 @@
 plugins {
-	id 'fabric-loom' version '1.17.17'
+	// The remapping variant of Loom: this mod is written against Yarn names,
+	// so Minecraft has to be remapped from official names to those. Fabric's
+	// own 1.21.11 template pins the same Loom version.
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 }
 
 version = project.mod_version
