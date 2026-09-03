@@ -11,3 +11,5 @@ blueprint-client-mod/run/
 # blueprint-client (PyInstaller)
 blueprint-client/build/
 blueprint-client/dist/
+blueprint-client-mod/gradle-app.setting
+!blueprint-client-mod/gradle/wrapper/gradle-wrapper.jar
