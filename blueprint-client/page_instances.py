@@ -244,7 +244,7 @@ class InstancesPage(tk.Frame):
         for other in self.instances:
             other["selected"] = other is instance
         self._fill_list()
-        self._set_status(f"Blueprint will now launch {instance.get('name')}.", theme.OK)
+        self._set_status(f"Obsidian will now launch {instance.get('name')}.", theme.OK)
 
     def open_folder(self):
         instance = self._selected_instance()

@@ -1,7 +1,7 @@
 """Delete files to the Recycle Bin instead of destroying them.
 
 Removing a mod deletes a file the user may have downloaded once and cannot get
-back, so Blueprint asks the Windows shell to do it - the file lands in the
+back, so the launcher asks the Windows shell to do it - the file lands in the
 Recycle Bin and a mistake can be undone from Explorer. If the shell call is not
 available (or fails) the caller decides whether a permanent delete is worth it.
 """

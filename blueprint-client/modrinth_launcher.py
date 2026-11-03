@@ -1,6 +1,6 @@
 """Launch Minecraft directly from the Modrinth App's game files.
 
-Blueprint Client never opens the Modrinth App window. Instead this module reads
+Obsidian Client never opens the Modrinth App window. Instead this module reads
 the Modrinth App data directory - the instance list, version manifests,
 libraries, assets, bundled Java runtimes and the signed-in account - and builds
 the ``java`` command line itself, the same way the Modrinth App would before it
@@ -25,7 +25,7 @@ import tempfile
 import uuid as uuid_lib
 import zipfile
 
-LAUNCHER_NAME = "blueprint-client"
+LAUNCHER_NAME = "obsidian-client"
 LAUNCHER_VERSION = "1.0.0"
 
 # Modrinth's default when an instance does not override it.
@@ -171,7 +171,7 @@ def _open_database(db_path):
 
     # The Modrinth App may be holding the database open; work from a snapshot.
     try:
-        temp_dir = tempfile.mkdtemp(prefix="blueprint-db-")
+        temp_dir = tempfile.mkdtemp(prefix="obsidian-db-")
         copy_path = os.path.join(temp_dir, "app.db")
         for suffix in ("", "-wal", "-shm"):
             source = db_path + suffix
@@ -532,7 +532,7 @@ def resolve_version_id(install, instance):
         raise LaunchError(
             "No Minecraft version files were found in "
             f"{install.versions_dir}. Open Modrinth once and let the instance finish "
-            "downloading, then launch from Blueprint Client."
+            "downloading, then launch from Obsidian Client."
         )
 
     best = None
@@ -1098,7 +1098,7 @@ def _parse_env_vars(value):
 
 
 def launch(plan):
-    """Start the game process detached from Blueprint Client."""
+    """Start the game process detached from the launcher."""
     kwargs = {
         "cwd": plan.cwd,
         "env": plan.env,

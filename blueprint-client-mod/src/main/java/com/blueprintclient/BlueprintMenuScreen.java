@@ -24,18 +24,18 @@ import java.util.Locale;
  * cannot be picked up and moved around the screen.
  */
 public class BlueprintMenuScreen extends Screen {
-	private static final int BACKDROP_TOP = 0xC0050D1A;
-	private static final int BACKDROP_BOTTOM = 0xC00D1F2B;
-	private static final int PANEL_BG = 0xF00A1929;
-	private static final int HEADER_BG = 0xFF0D1F2B;
-	private static final int BORDER = 0xFF1B3A63;
-	private static final int ROW_HOVER = 0x403D8BFF;
-	private static final int ACCENT = 0xFF3D8BFF;
-	private static final int ACCENT_LIGHT = 0xFF8ECBFF;
-	private static final int TEXT = 0xFFE8F4FF;
-	private static final int MUTED = 0xFF6F90AD;
-	private static final int ON_GREEN = 0xFF7CE0A8;
-	private static final int FIELD_BG = 0xFF12263D;
+	private static final int BACKDROP_TOP = 0xC009090B;
+	private static final int BACKDROP_BOTTOM = 0xC0111114;
+	private static final int PANEL_BG = 0xF00C0C0E;
+	private static final int HEADER_BG = 0xFF111114;
+	private static final int BORDER = 0xFF25252B;
+	private static final int ROW_HOVER = 0x40E8E8EC;
+	private static final int ACCENT = 0xFFE8E8EC;
+	private static final int ACCENT_LIGHT = 0xFFB9B9C2;
+	private static final int TEXT = 0xFFECECEF;
+	private static final int MUTED = 0xFF74747D;
+	private static final int ON_GREEN = 0xFF7DDF9F;
+	private static final int FIELD_BG = 0xFF19191E;
 
 	private static final int HEADER_HEIGHT = 18;
 	private static final int ROW_HEIGHT = 15;
@@ -52,7 +52,7 @@ public class BlueprintMenuScreen extends Screen {
 	private int dragOffsetY;
 
 	public BlueprintMenuScreen() {
-		super(Text.literal("Blueprint Menu"));
+		super(Text.literal("Obsidian Menu"));
 	}
 
 	@Override
@@ -88,8 +88,8 @@ public class BlueprintMenuScreen extends Screen {
 	}
 
 	private void drawTopBar(DrawContext context, int mouseX, int mouseY) {
-		context.drawTextWithShadow(this.textRenderer, "BLUEPRINT", 10, BAR_Y + 4, ACCENT);
-		int wordmark = this.textRenderer.getWidth("BLUEPRINT ");
+		context.drawTextWithShadow(this.textRenderer, "OBSIDIAN", 10, BAR_Y + 4, ACCENT);
+		int wordmark = this.textRenderer.getWidth("OBSIDIAN ");
 		context.drawTextWithShadow(this.textRenderer, "CLIENT", 10 + wordmark, BAR_Y + 4, ACCENT_LIGHT);
 
 		int searchX = searchX();

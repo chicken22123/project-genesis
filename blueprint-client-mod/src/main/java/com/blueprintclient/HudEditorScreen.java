@@ -21,18 +21,18 @@ import java.util.List;
  * moving something to the bottom right keeps it there at another resolution.
  */
 public class HudEditorScreen extends Screen {
-	private static final int BACKDROP_TOP = 0xC0050D1A;
-	private static final int BACKDROP_BOTTOM = 0xC00D1F2B;
-	private static final int GRID = 0x14294B73;
-	private static final int BOX_BG = 0x40123A63;
-	private static final int BOX_BG_HOVER = 0x603D8BFF;
-	private static final int BORDER = 0xFF1B3A63;
-	private static final int ACCENT = 0xFF3D8BFF;
-	private static final int ACCENT_LIGHT = 0xFF8ECBFF;
-	private static final int TEXT = 0xFFE8F4FF;
-	private static final int MUTED = 0xFF6F90AD;
-	private static final int FIELD_BG = 0xFF12263D;
-	private static final int GUIDE = 0xFF7CE0A8;
+	private static final int BACKDROP_TOP = 0xC009090B;
+	private static final int BACKDROP_BOTTOM = 0xC0111114;
+	private static final int GRID = 0x143A3A42;
+	private static final int BOX_BG = 0x402B2B32;
+	private static final int BOX_BG_HOVER = 0x60E8E8EC;
+	private static final int BORDER = 0xFF25252B;
+	private static final int ACCENT = 0xFFE8E8EC;
+	private static final int ACCENT_LIGHT = 0xFFB9B9C2;
+	private static final int TEXT = 0xFFECECEF;
+	private static final int MUTED = 0xFF74747D;
+	private static final int FIELD_BG = 0xFF19191E;
+	private static final int GUIDE = 0xFF7DDF9F;
 
 	private static final int PADDING = 3;
 	private static final int SNAP = 6;
@@ -170,7 +170,7 @@ public class HudEditorScreen extends Screen {
 	}
 
 	private void drawHeader(DrawContext context, int count) {
-		context.fill(0, 0, this.width, 30, 0xD00A1929);
+		context.fill(0, 0, this.width, 30, 0xD00C0C0E);
 		context.fill(0, 30, this.width, 31, BORDER);
 		context.fill(10, 8, 13, 22, ACCENT);
 		context.drawTextWithShadow(this.textRenderer, "HUD EDITOR", 20, 6, ACCENT_LIGHT);
@@ -190,11 +190,11 @@ public class HudEditorScreen extends Screen {
 	private void drawButton(
 			DrawContext context, int x, int y, int width, String label, int mouseX, int mouseY, boolean primary) {
 		boolean hovered = inside(mouseX, mouseY, x, y, width, BUTTON_HEIGHT);
-		int fill = primary ? (hovered ? 0xFF5A9DFF : ACCENT) : (hovered ? BORDER : FIELD_BG);
+		int fill = primary ? (hovered ? 0xFFFFFFFF : ACCENT) : (hovered ? BORDER : FIELD_BG);
 		context.fill(x, y, x + width, y + BUTTON_HEIGHT, fill);
 		border(context, x, y, width, BUTTON_HEIGHT, hovered ? ACCENT_LIGHT : BORDER);
 		context.drawTextWithShadow(
-				this.textRenderer, label, x + 8, y + 4, primary ? 0xFF050D1A : TEXT);
+				this.textRenderer, label, x + 8, y + 4, primary ? 0xFF09090B : TEXT);
 	}
 
 	private void border(DrawContext context, int x, int y, int width, int height, int color) {

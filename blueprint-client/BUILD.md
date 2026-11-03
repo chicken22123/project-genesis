@@ -1,4 +1,4 @@
-# Building the Blueprint Client .exe
+# Building the Obsidian Client .exe
 
 Windows only. PyInstaller does not cross-compile, so a Windows executable has
 to be built on Windows. To run the launcher on Linux or ChromeOS instead, see
@@ -12,19 +12,19 @@ Double-click `build.cmd`, or from a terminal in this folder:
 build.cmd
 ```
 
-The result is `dist\Blueprint Client\Blueprint Client.exe`. Ship the whole
-`dist\Blueprint Client` folder (zip it) - the exe needs the `_internal`
+The result is `dist\Obsidian Client\Obsidian Client.exe`. Ship the whole
+`dist\Obsidian Client` folder (zip it) - the exe needs the `_internal`
 folder beside it.
 
 ## Doing it by hand
 
 ```cmd
 py -m pip install pyinstaller
-py -m PyInstaller --noconfirm blueprint-client.spec
+py -m PyInstaller --noconfirm obsidian-client.spec
 ```
 
-The settings live in `blueprint-client.spec`: a windowed (no console) onedir
-build named "Blueprint Client", with `blueprint_icon.ico` used both as the exe
+The settings live in `obsidian-client.spec`: a windowed (no console) onedir
+build named "Obsidian Client", with `app_icon.ico` used both as the exe
 icon and as bundled data for the window/taskbar icon.
 
 The launcher imports nothing outside the standard library, so there is nothing
@@ -35,9 +35,9 @@ to install first and no hidden imports to declare.
 `app.py` resolves two separate directories, because a frozen build unpacks
 itself somewhere temporary:
 
-- **Assets** (`blueprint_icon.ico`) come out of the bundle.
+- **Assets** (`app_icon.ico`) come out of the bundle.
 - **`blueprint_instance.json` and `launch.log`** are written beside the exe, or
-  in `%APPDATA%\BlueprintClient` when the install directory is read-only (an
+  in `%APPDATA%\ObsidianClient` when the install directory is read-only (an
   install under `Program Files`, for example).
 
 Running `app.py` as a script is unchanged - both still sit next to the source.
@@ -50,4 +50,4 @@ Running `app.py` as a script is unchanged - both still sit next to the source.
 - **Antivirus false positives** happen with PyInstaller, and much more often
   with `--onefile` than with the onedir build configured here.
 - **Want a real installer** instead of a zip? Point [Inno Setup](https://jrsoftware.org/isinfo.php)
-  at the `dist\Blueprint Client` folder.
+  at the `dist\Obsidian Client` folder.

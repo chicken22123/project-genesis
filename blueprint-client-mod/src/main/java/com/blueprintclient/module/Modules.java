@@ -25,7 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Every module Blueprint ships, and the registry the menu and the HUD read.
+ * Every module Obsidian ships, and the registry the menu and the HUD read.
  *
  * <p>These are all client-side comfort features - brightness, zoom, readouts.
  * Nothing here tells the server anything it would not already hear from a
@@ -636,11 +636,11 @@ public final class Modules {
 	private static final class Keystrokes extends Module {
 		private static final int KEY_SIZE = 16;
 		private static final int GAP = 2;
-		private static final int IDLE_BG = 0x90050D1A;
-		private static final int PRESSED_BG = 0xFF3D8BFF;
-		private static final int BORDER = 0xFF1B3A63;
-		private static final int IDLE_TEXT = 0xFFE8F4FF;
-		private static final int PRESSED_TEXT = 0xFF050D1A;
+		private static final int IDLE_BG = 0x9009090B;
+		private static final int PRESSED_BG = 0xFFE8E8EC;
+		private static final int BORDER = 0xFF25252B;
+		private static final int IDLE_TEXT = 0xFFECECEF;
+		private static final int PRESSED_TEXT = 0xFF09090B;
 
 		private Keystrokes() {
 			super("Keystrokes", Category.HUD, "Shows WASD, the mouse buttons and space.");

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Blueprint Client on Linux (including ChromeOS's Linux container).
+# Start Obsidian Client on Linux (including ChromeOS's Linux container).
 # Windows users want launch_app.bat instead.
 set -euo pipefail
 cd "$(dirname "$0")"

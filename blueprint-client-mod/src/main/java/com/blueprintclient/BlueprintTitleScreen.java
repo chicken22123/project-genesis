@@ -24,16 +24,16 @@ import java.util.List;
  * colour behind it.
  */
 public class BlueprintTitleScreen extends Screen {
-	private static final int BG_TOP = 0xFF050D1A;
-	private static final int BG_BOTTOM = 0xFF0D1F2B;
-	private static final int PANEL_BG = 0xF00D1F2B;
-	private static final int PANEL_ALT = 0xF00A1929;
-	private static final int BORDER = 0xFF1B3A63;
-	private static final int ACCENT = 0xFF3D8BFF;
-	private static final int ACCENT_LIGHT = 0xFF8ECBFF;
-	private static final int TEXT = 0xFFE8F4FF;
-	private static final int MUTED = 0xFF6F90AD;
-	private static final int OK_GREEN = 0xFF7CE0A8;
+	private static final int BG_TOP = 0xFF09090B;
+	private static final int BG_BOTTOM = 0xFF111114;
+	private static final int PANEL_BG = 0xF0111114;
+	private static final int PANEL_ALT = 0xF00C0C0E;
+	private static final int BORDER = 0xFF25252B;
+	private static final int ACCENT = 0xFFE8E8EC;
+	private static final int ACCENT_LIGHT = 0xFFB9B9C2;
+	private static final int TEXT = 0xFFECECEF;
+	private static final int MUTED = 0xFF74747D;
+	private static final int OK_GREEN = 0xFF7DDF9F;
 
 	private static final int BUTTON_WIDTH = 240;
 	private static final int BUTTON_HEIGHT = 26;
@@ -46,7 +46,7 @@ public class BlueprintTitleScreen extends Screen {
 	}
 
 	public BlueprintTitleScreen() {
-		super(Text.literal("Blueprint Client"));
+		super(Text.literal("Obsidian Client"));
 	}
 
 	@Override
@@ -113,7 +113,7 @@ public class BlueprintTitleScreen extends Screen {
 		int step = 28;
 		float pulse = (float) (0.5 + 0.5 * Math.sin(ticks * 0.02));
 		int alpha = (int) (10 + 8 * pulse);
-		int color = (alpha << 24) | 0x1E3A63;
+		int color = (alpha << 24) | 0x25252B;
 		for (int x = 0; x < this.width; x += step) {
 			context.fill(x, 0, x + 1, this.height, color);
 		}
@@ -131,7 +131,7 @@ public class BlueprintTitleScreen extends Screen {
 			if (alpha <= 0) {
 				continue;
 			}
-			int color = (alpha << 24) | 0x3D8BFF;
+			int color = (alpha << 24) | 0xE8E8EC;
 			context.fill(0, centerY - offset, this.width, centerY + offset, color);
 		}
 	}
@@ -144,15 +144,15 @@ public class BlueprintTitleScreen extends Screen {
 		context.getMatrices().pushMatrix();
 		context.getMatrices().scale(2.0f, 2.0f);
 
-		String blueprint = "BLUEPRINT";
+		String brand = "OBSIDIAN";
 		String client = " CLIENT";
-		int total = this.textRenderer.getWidth(blueprint) + this.textRenderer.getWidth(client);
+		int total = this.textRenderer.getWidth(brand) + this.textRenderer.getWidth(client);
 		int startX = (centerX - total) / 2;
 		int scaledY = titleY / 2;
 
-		context.drawTextWithShadow(this.textRenderer, blueprint, startX, scaledY, ACCENT);
+		context.drawTextWithShadow(this.textRenderer, brand, startX, scaledY, ACCENT);
 		context.drawTextWithShadow(
-				this.textRenderer, client, startX + this.textRenderer.getWidth(blueprint), scaledY, ACCENT_LIGHT);
+				this.textRenderer, client, startX + this.textRenderer.getWidth(brand), scaledY, ACCENT_LIGHT);
 
 		context.getMatrices().popMatrix();
 
@@ -187,7 +187,7 @@ public class BlueprintTitleScreen extends Screen {
 		int fill;
 		int labelColor;
 		if (item.primary()) {
-			fill = hovered ? 0xFF5A9DFF : ACCENT;
+			fill = hovered ? 0xFFFFFFFF : ACCENT;
 			labelColor = BG_TOP;
 		} else {
 			fill = hovered ? PANEL_BG : PANEL_ALT;
@@ -212,7 +212,7 @@ public class BlueprintTitleScreen extends Screen {
 				item.hint(),
 				x + BUTTON_WIDTH - 12 - hintWidth,
 				textY,
-				item.primary() ? 0x66050D1A : MUTED);
+				item.primary() ? 0x6609090B : MUTED);
 	}
 
 	private void drawStatusBar(DrawContext context) {
@@ -222,11 +222,11 @@ public class BlueprintTitleScreen extends Screen {
 
 		float pulse = (float) (0.5 + 0.5 * Math.sin(ticks * 0.15));
 		int alpha = (int) (140 + 100 * pulse);
-		context.fill(8, barY + 7, 12, barY + 11, (alpha << 24) | 0x7CE0A8);
+		context.fill(8, barY + 7, 12, barY + 11, (alpha << 24) | 0x7DDF9F);
 		context.drawTextWithShadow(this.textRenderer, "Ready", 18, barY + 5, OK_GREEN);
 
 		String fps = this.client.getCurrentFps() + " fps";
-		String hint = "Right Shift opens the Blueprint menu in game";
+		String hint = "Right Shift opens the Obsidian menu in game";
 		context.drawTextWithShadow(this.textRenderer, hint, 60, barY + 5, MUTED);
 		context.drawTextWithShadow(
 				this.textRenderer, fps, this.width - 8 - this.textRenderer.getWidth(fps), barY + 5, ACCENT_LIGHT);

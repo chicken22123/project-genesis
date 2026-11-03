@@ -6,16 +6,16 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 public class BlueprintWelcomeScreen extends Screen {
-	private static final int BACKDROP = 0xC0050D1A;
-	private static final int PANEL_BG = 0xF00D1F2B;
-	private static final int PANEL_BORDER = 0xFF3D8BFF;
-	private static final int TITLE_COLOR = 0xFF8ECBFF;
-	private static final int SUBTITLE_COLOR = 0x8F8FB0BF;
+	private static final int BACKDROP = 0xC009090B;
+	private static final int PANEL_BG = 0xF0111114;
+	private static final int PANEL_BORDER = 0xFFE8E8EC;
+	private static final int TITLE_COLOR = 0xFFB9B9C2;
+	private static final int SUBTITLE_COLOR = 0x8FA0A0A8;
 
 	private final Screen parent;
 
 	public BlueprintWelcomeScreen(Screen parent) {
-		super(Text.literal("Blueprint Client"));
+		super(Text.literal("Obsidian Client"));
 		this.parent = parent;
 	}
 
@@ -51,7 +51,7 @@ public class BlueprintWelcomeScreen extends Screen {
 		context.fill(panelRight - 1, panelTop, panelRight, panelBottom, PANEL_BORDER);
 
 		int centerX = this.width / 2;
-		context.drawCenteredTextWithShadow(this.textRenderer, "BLUEPRINT CLIENT", centerX, panelTop + 24, TITLE_COLOR);
+		context.drawCenteredTextWithShadow(this.textRenderer, "OBSIDIAN CLIENT", centerX, panelTop + 24, TITLE_COLOR);
 		context.drawCenteredTextWithShadow(this.textRenderer, "Welcome back.", centerX, panelTop + 44, SUBTITLE_COLOR);
 
 		super.render(context, mouseX, mouseY, delta);

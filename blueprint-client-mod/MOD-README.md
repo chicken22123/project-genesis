@@ -1,4 +1,4 @@
-# Building and sharing the Blueprint Client mod
+# Building and sharing the Obsidian Client mod
 
 The launcher and the mod are two separate things. `blueprint-client/` starts
 Minecraft; this project is the mod that changes what Minecraft looks like once
@@ -28,8 +28,8 @@ and the Fabric toolchain. Later builds take seconds.
 
 The result lands in `build/libs/`:
 
-- `blueprint-client-mod-1.0.0.jar` - **this is the one to share**
-- `blueprint-client-mod-1.0.0-sources.jar` - source code, not needed to play
+- `obsidian-client-mod-1.1.0.jar` - **this is the one to share**
+- `obsidian-client-mod-1.1.0-sources.jar` - source code, not needed to play
 
 ## What someone needs to run it
 
@@ -42,19 +42,19 @@ The jar on its own does nothing. Minecraft has to be set up to load it:
    without it.
 4. **Java 21** to run the game.
 
-Then drop both jars - Fabric API and `blueprint-client-mod-1.0.0.jar` - into
+Then drop both jars - Fabric API and `obsidian-client-mod-1.1.0.jar` - into
 the instance's `mods` folder.
 
 If they use the Modrinth App, the easy route is: create an instance on 1.21.11
 with Fabric as the loader, install Fabric API from inside Modrinth, then put
-the Blueprint jar in that instance's `mods` folder.
+the Obsidian jar in that instance's `mods` folder.
 
 ## So what do you actually send a friend?
 
 Three things:
 
-1. `blueprint-client-mod-1.0.0.jar` - the visuals and modules
-2. The Blueprint Client launcher zip - optional, only if they want the launcher
+1. `obsidian-client-mod-1.1.0.jar` - the visuals and modules
+2. The Obsidian Client launcher zip - optional, only if they want the launcher
 3. A note saying: Minecraft 1.21.11, Fabric loader, and Fabric API first
 
 The mod is the part that changes the game. The launcher is a convenience for

@@ -1,15 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build for Blueprint Client.
+"""PyInstaller build for Obsidian Client.
 
 Run ``build.cmd``, or by hand:
 
-    py -m PyInstaller --noconfirm blueprint-client.spec
+    py -m PyInstaller --noconfirm obsidian-client.spec
 
-Produces ``dist/Blueprint Client/Blueprint Client.exe``. This is a onedir
+Produces ``dist/Obsidian Client/Obsidian Client.exe``. This is a onedir
 build on purpose: a onefile exe re-unpacks the whole Tcl/Tk runtime into a
 temp directory on every launch, which is a visible delay before the window
 appears, and it is the variant Windows Defender's heuristics flag hardest.
-Zip the ``dist/Blueprint Client`` folder to hand it out.
+Zip the ``dist/Obsidian Client`` folder to hand it out.
 
 The launcher imports nothing outside the standard library, so there are no
 hidden imports to declare - only the icon has to be carried along.
@@ -25,9 +25,9 @@ a = Analysis(
     pathex=[HERE],
     binaries=[],
     datas=[
-        (os.path.join(HERE, "blueprint_icon.ico"), "."),
+        (os.path.join(HERE, "app_icon.ico"), "."),
         # The window icon on any platform Tk will not hand a .ico to.
-        (os.path.join(HERE, "blueprint_icon.png"), "."),
+        (os.path.join(HERE, "app_icon.png"), "."),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -44,7 +44,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Blueprint Client",
+    name="Obsidian Client",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -52,7 +52,7 @@ exe = EXE(
     # A Tk app: without this a console window sits behind the UI for the
     # whole session.
     console=False,
-    icon=os.path.join(HERE, "blueprint_icon.ico"),
+    icon=os.path.join(HERE, "app_icon.ico"),
 )
 
 coll = COLLECT(
@@ -61,5 +61,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="Blueprint Client",
+    name="Obsidian Client",
 )

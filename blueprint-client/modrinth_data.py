@@ -1,7 +1,7 @@
 """The reads the UI needs from the Modrinth App files.
 
 Everything here touches SQLite or the disk, so every function is meant to be
-called from a worker thread (see ``BlueprintApp.run_async``) and returns plain
+called from a worker thread (see ``ObsidianApp.run_async``) and returns plain
 dicts and lists - never the ``ModrinthInstall`` object itself. That object owns
 an open sqlite connection and is cached behind a lock, so only this module ever
 handles it.

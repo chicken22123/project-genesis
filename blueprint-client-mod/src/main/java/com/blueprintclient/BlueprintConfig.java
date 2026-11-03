@@ -99,7 +99,7 @@ public final class BlueprintConfig {
 		try {
 			Files.createDirectories(file.getParent());
 			try (OutputStream output = Files.newOutputStream(file)) {
-				properties.store(output, "Blueprint Client");
+				properties.store(output, "Obsidian Client");
 			}
 		} catch (IOException exception) {
 			// A menu toggle is not worth crashing the game over.

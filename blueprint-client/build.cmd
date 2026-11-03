@@ -1,5 +1,5 @@
 @echo off
-REM Builds Blueprint Client into dist\Blueprint Client\Blueprint Client.exe
+REM Builds Obsidian Client into dist\Obsidian Client\Obsidian Client.exe
 REM Windows only - PyInstaller cannot cross-compile a Windows exe elsewhere.
 setlocal
 cd /d "%~dp0"
@@ -19,10 +19,10 @@ REM Start clean, so a removed file cannot linger in the output.
 if exist "build" rmdir /s /q "build"
 if exist "dist" rmdir /s /q "dist"
 
-py -m PyInstaller --noconfirm blueprint-client.spec
+py -m PyInstaller --noconfirm obsidian-client.spec
 if errorlevel 1 exit /b 1
 
 echo.
 echo Done. The app is at:
-echo   "%~dp0dist\Blueprint Client\Blueprint Client.exe"
-echo Ship the whole "Blueprint Client" folder, not just the exe.
+echo   "%~dp0dist\Obsidian Client\Obsidian Client.exe"
+echo Ship the whole "Obsidian Client" folder, not just the exe.

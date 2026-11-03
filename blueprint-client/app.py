@@ -1,6 +1,7 @@
-"""Blueprint Client: a desktop launcher for the Minecraft files Modrinth manages.
+"""Obsidian Client: a desktop launcher for the Minecraft files Modrinth manages.
 
-The window is a sidebar plus four pages - Play, Instances, Mods and Settings.
+The window is a top bar of tabs over four pages - Play, Instances, Mods and
+Settings.
 Anything that reads the disk or the Modrinth database runs on a worker thread
 and comes back through ``self.events``, so the UI never blocks while a launch,
 a folder scan or a jar read is in progress.
@@ -56,7 +57,7 @@ def _data_dir():
         return beside_exe
 
     roaming = os.environ.get("APPDATA") or os.path.expanduser("~")
-    fallback = os.path.join(roaming, "BlueprintClient")
+    fallback = os.path.join(roaming, "ObsidianClient")
     try:
         os.makedirs(fallback, exist_ok=True)
     except OSError:
@@ -68,12 +69,12 @@ BUNDLE_DIR = _bundle_dir()
 DATA_DIR = _data_dir()
 CONFIG_PATH = os.path.join(DATA_DIR, "blueprint_instance.json")
 LOG_PATH = os.path.join(DATA_DIR, "launch.log")
-ICON_PATH = os.path.join(BUNDLE_DIR, "blueprint_icon.ico")
+ICON_PATH = os.path.join(BUNDLE_DIR, "app_icon.ico")
 # The same mark as a PNG, for the platforms Tk will not hand a .ico to and for
 # the ChromeOS launcher entry.
-ICON_PNG_PATH = os.path.join(BUNDLE_DIR, "blueprint_icon.png")
+ICON_PNG_PATH = os.path.join(BUNDLE_DIR, "app_icon.png")
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 LOG = RotatingLog(LOG_PATH)
 
@@ -98,67 +99,132 @@ def _redacted_command_text(command):
     return " ".join(f'"{part}"' if " " in part else part for part in parts)
 
 
-class Sidebar(tk.Frame):
-    """Brand block, the instance currently selected, and the page switcher."""
+class TopBar(tk.Canvas):
+    """The crystal logo, the page tabs and the selected instance, in one strip.
+
+    A canvas rather than widgets so the selected tab can carry a glowing
+    underline and the logo can be drawn instead of loaded from a file.
+    """
+
+    HEIGHT = 62
 
     def __init__(self, parent, app, pages):
-        super().__init__(parent, bg=theme.PANEL_BG, bd=0, highlightthickness=0, width=212)
-        self.pack_propagate(False)
+        super().__init__(
+            parent, height=self.HEIGHT, bg=theme.BG_TOP, highlightthickness=0, bd=0
+        )
         self.app = app
+        self.pages = pages
+        self.selected = pages[0][0]
+        self.hover = None
+        self.summary = {}
+        self._tabs = {}
 
-        brand = theme.frame(self, bg=theme.PANEL_BG)
-        brand.pack(fill="x", padx=20, pady=(24, 0))
-        row = theme.frame(brand, bg=theme.PANEL_BG)
-        row.pack(fill="x")
-        theme.logo_badge(row, theme.BRAND_LETTER, size=38).pack(side="left")
-        words = theme.frame(row, bg=theme.PANEL_BG)
-        words.pack(side="left", padx=(10, 0))
-        # Stacked, because the two words together are wider than the sidebar.
-        first, second = theme.BRAND_WORDS
-        theme.label(words, first, size=13, weight="bold", fg=theme.ACCENT_HOVER).pack(anchor="w")
-        theme.label(words, second, size=13, weight="bold", fg=theme.MUTED).pack(anchor="w")
-        theme.label(brand, "Desktop launcher", size=9, fg=theme.MUTED).pack(anchor="w", pady=(8, 0))
-
-        card = theme.panel(self, bg=theme.PANEL_ALT)
-        card.pack(fill="x", padx=20, pady=(20, 18))
-        theme.eyebrow(card, "Playing", bg=theme.PANEL_ALT).pack(anchor="w", padx=14, pady=(12, 4))
-        self.instance_label = theme.label(
-            card, "Loading...", size=11, weight="bold", bg=theme.PANEL_ALT,
-            anchor="w", justify="left", wraplength=150,
-        )
-        self.instance_label.pack(anchor="w", padx=14)
-        self.version_label = theme.label(
-            card, "", size=9, fg=theme.MUTED, bg=theme.PANEL_ALT, anchor="w",
-            justify="left", wraplength=150,
-        )
-        self.version_label.pack(anchor="w", padx=14, pady=(2, 12))
-
-        theme.separator(self).pack(fill="x", padx=20, pady=(0, 14))
-
-        self.buttons = {}
-        for key, caption in pages:
-            widget = theme.nav_button(
-                self, caption, lambda name=key: self.app.show_page(name),
-                icon=theme.NAV_ICONS.get(key, ""),
-            )
-            widget.pack(fill="x", padx=10, pady=2)
-            self.buttons[key] = widget
-
-        footer = theme.frame(self, bg=theme.PANEL_BG)
-        footer.pack(side="bottom", fill="x", padx=20, pady=16)
-        theme.label(footer, f"v{APP_VERSION}", size=8, fg=theme.MUTED).pack(anchor="w")
+        self.bind("<Configure>", lambda _event: self.redraw())
+        self.bind("<Motion>", self._on_motion)
+        self.bind("<Leave>", lambda _event: self._set_hover(None))
+        self.bind("<Button-1>", self._on_click)
 
     def select(self, name):
-        for key, widget in self.buttons.items():
-            theme.set_nav_selected(widget, key == name)
+        self.selected = name
+        self.redraw()
 
     def set_summary(self, summary):
-        self.instance_label.configure(text=summary.get("instance", "-"))
-        loader = (summary.get("loader") or "vanilla").title()
-        self.version_label.configure(text=f"{summary.get('version', '-')} · {loader}")
+        self.summary = dict(summary)
+        self.redraw()
+
+    def _tab_at(self, x, y):
+        for key, (x0, y0, x1, y1) in self._tabs.items():
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return key
+        return None
+
+    def _on_motion(self, event):
+        key = self._tab_at(event.x, event.y)
+        self.configure(cursor="hand2" if key else "")
+        self._set_hover(key)
+
+    def _set_hover(self, key):
+        if key != self.hover:
+            self.hover = key
+            self.redraw()
+
+    def _on_click(self, event):
+        key = self._tab_at(event.x, event.y)
+        if key:
+            self.app.show_page(key)
+
+    def redraw(self):
+        self.delete("all")
+        width, height = self.winfo_width(), self.HEIGHT
+        if width <= 1:
+            return
+        mid = height / 2
+
+        theme.draw_gem(self, 36, mid, 30)
+        first, second = theme.BRAND_WORDS
+        word_font = theme.font(13, "bold")
+        x = 62
+        self.create_text(x, mid, text=first, anchor="w", font=word_font, fill=theme.ACCENT_HOVER)
+        x += word_font.measure(first + " ")
+        self.create_text(x, mid, text=second, anchor="w", font=word_font, fill=theme.MUTED)
+        x += word_font.measure(second) + 28
+        self.create_line(x, mid - 12, x, mid + 12, fill=theme.PANEL_BORDER)
+        x += 30
+
+        tab_font = theme.font(10, "bold")
+        self._tabs = {}
+        for key, caption in self.pages:
+            label = caption.upper()
+            tab_width = tab_font.measure(label)
+            selected = key == self.selected
+            if selected:
+                colour = theme.ACCENT_HOVER
+            elif key == self.hover:
+                colour = theme.TEXT
+            else:
+                colour = theme.MUTED
+            self.create_text(x, mid, text=label, anchor="w", font=tab_font, fill=colour)
+            if selected:
+                # A soft wide stroke under a crisp one reads as a glow.
+                underline = height - 4
+                self.create_line(
+                    x - 6, underline, x + tab_width + 6, underline, width=6,
+                    fill=theme.blend(theme.BG_TOP, theme.ACCENT, 0.18),
+                )
+                self.create_line(
+                    x, underline, x + tab_width, underline, width=2, fill=theme.ACCENT_HOVER
+                )
+            self._tabs[key] = (x - 14, 0, x + tab_width + 14, height)
+            x += tab_width + 34
+
+        right = width - 24
+        version = f"v{APP_VERSION}"
+        pill_font = theme.font(8, "bold")
+        pill_width = pill_font.measure(version) + 20
+        theme.rounded_rect(
+            self, right - pill_width, mid - 11, right, mid + 11, radius=11,
+            fill=theme.TRACK, outline=theme.PANEL_BORDER,
+        )
+        self.create_text(right - pill_width / 2, mid, text=version, font=pill_font, fill=theme.MUTED)
+        right -= pill_width + 16
+
+        if self.summary and right - x > 140:
+            loader = (self.summary.get("loader") or "vanilla").title()
+            line = f"{self.summary.get('instance', '-')}  ·  {self.summary.get('version', '-')} {loader}"
+            line_font = theme.font(9, "bold")
+            line = theme.fit_text(line, line_font, right - x - 30)
+            self.create_text(right, mid, text=line, anchor="e", font=line_font, fill=theme.ACCENT_LIGHT)
+            dot_x = right - line_font.measure(line) - 12
+            found = bool(self.summary.get("path"))
+            self.create_oval(
+                dot_x - 3, mid - 3, dot_x + 3, mid + 3, outline="",
+                fill=theme.OK if found else theme.MUTED,
+            )
+
+        self.create_line(0, height - 1, width, height - 1, fill=theme.PANEL_BORDER)
 
 
-class BlueprintApp:
+class ObsidianApp:
     def __init__(self, root):
         self.root = root
         self.root.title(theme.BRAND_NAME)
@@ -192,21 +258,17 @@ class BlueprintApp:
         self.game_process = None
         self.current_page = ""
 
-        body = theme.frame(root)
-        body.pack(fill="both", expand=True)
-
         page_names = [
             ("play", "Play"),
             ("instances", "Instances"),
             ("mods", "Mods"),
             ("settings", "Settings"),
         ]
-        self.sidebar = Sidebar(body, self, page_names)
-        self.sidebar.pack(side="left", fill="y")
-        theme.separator(body, bg=theme.PANEL_BORDER).pack(side="left", fill="y")
+        self.topbar = TopBar(root, self, page_names)
+        self.topbar.pack(fill="x")
 
-        self.content = theme.frame(body)
-        self.content.pack(side="left", fill="both", expand=True)
+        self.content = theme.frame(root)
+        self.content.pack(fill="both", expand=True)
 
         self.pages = {
             "play": PlayPage(self.content, self),
@@ -240,7 +302,7 @@ class BlueprintApp:
                 page.pack_forget()
 
         self.current_page = name
-        self.sidebar.select(name)
+        self.topbar.select(name)
         on_show = getattr(self.pages[name], "on_show", None)
         if on_show:
             on_show()
@@ -278,7 +340,7 @@ class BlueprintApp:
     # -------------------------------------------------------------- summary
 
     def refresh_summary(self):
-        """Reload the instance shown in the sidebar and on the Play page."""
+        """Reload the instance shown in the top bar and on the Play page."""
         config = dict(self.config_store.data)
 
         def work():
@@ -304,7 +366,7 @@ class BlueprintApp:
             }
             self.play.append(str(error), "error")
         self.play.set_summary(summary)
-        self.sidebar.set_summary(summary)
+        self.topbar.set_summary(summary)
 
     def _on_config_changed(self, _config):
         modrinth_data.invalidate()
@@ -475,13 +537,13 @@ class BlueprintApp:
 
 
 def main():
-    _log("--- Blueprint Client starting ---")
+    _log(f"--- {theme.BRAND_NAME} starting ---")
     # className becomes the window's WM_CLASS, which is how the ChromeOS
     # launcher (and any Linux shelf) ties the open window to its icon.
-    root = tk.Tk(className="BlueprintClient")
-    BlueprintApp(root)
+    root = tk.Tk(className="ObsidianClient")
+    ObsidianApp(root)
     root.mainloop()
-    _log("--- Blueprint Client closed ---")
+    _log(f"--- {theme.BRAND_NAME} closed ---")
 
 
 if __name__ == "__main__":

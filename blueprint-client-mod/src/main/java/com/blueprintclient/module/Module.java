@@ -4,7 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
 /**
- * One toggle in the Blueprint menu.
+ * One toggle in the Obsidian menu.
  *
  * <p>A module can do three things: react to being switched on or off, run
  * something every client tick, and put a line (or its own drawing) on the HUD.
@@ -12,7 +12,7 @@ import net.minecraft.client.gui.DrawContext;
  */
 public abstract class Module {
 	/** The blue every HUD element is drawn in. */
-	public static final int HUD_COLOR = 0xFF8ECBFF;
+	public static final int HUD_COLOR = 0xFFB9B9C2;
 
 	private final String name;
 	private final Category category;

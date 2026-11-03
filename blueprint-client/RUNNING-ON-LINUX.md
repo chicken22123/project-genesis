@@ -1,4 +1,4 @@
-# Running Blueprint Client on Linux / ChromeOS
+# Running Obsidian Client on Linux / ChromeOS
 
 There is no `.exe` involved here. On ChromeOS you run the launcher as a Python
 script inside the Linux development environment (Crostini), which is a normal
@@ -27,11 +27,11 @@ Typing `./run.sh` every time gets old. To get a real ChromeOS app icon:
 ./install-chromeos-app.sh
 ```
 
-"Blueprint Client" then shows up in the ChromeOS launcher (the circle at the
+"Obsidian Client" then shows up in the ChromeOS launcher (the circle at the
 bottom-left) under Linux apps, within a few seconds - nothing needs restarting.
 Right-click it there to pin it to the shelf.
 
-What that script does: writes `~/.local/share/applications/blueprint-client.desktop`
+What that script does: writes `~/.local/share/applications/obsidian-client.desktop`
 and drops a 256x256 PNG into `~/.local/share/icons`. ChromeOS watches that
 applications folder and mirrors anything in it into the launcher. The entry
 points at `run.sh` by absolute path, so leave the project where it is - if you
@@ -40,16 +40,16 @@ move the folder, run the script again.
 To remove it:
 
 ```sh
-rm ~/.local/share/applications/blueprint-client.desktop
-rm ~/.local/share/icons/hicolor/256x256/apps/blueprint-client.png
+rm ~/.local/share/applications/obsidian-client.desktop
+rm ~/.local/share/icons/hicolor/256x256/apps/obsidian-client.png
 ```
 
 ## You also need the Modrinth App
 
-Blueprint Client is a front-end for instances the Modrinth App manages. It reads
+Obsidian Client is a front-end for instances the Modrinth App manages. It reads
 Modrinth's own data folder and launches what it finds there; it does not
 download Minecraft itself. So the Modrinth App has to be installed **inside the
-same Linux container**, with at least one instance in it, or Blueprint Client
+same Linux container**, with at least one instance in it, or Obsidian Client
 will start and then tell you it cannot find the data folder.
 
 On Linux it looks for that folder in:

@@ -1,5 +1,5 @@
 @echo off
-REM Builds the Blueprint Client Fabric mod into build\libs\.
+REM Builds the Obsidian Client Fabric mod into build\libs\.
 REM Needs JDK 21 on PATH - Gradle itself is downloaded by the wrapper.
 setlocal
 cd /d "%~dp0"

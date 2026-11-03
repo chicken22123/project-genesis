@@ -12,9 +12,9 @@ from tkinter import ttk
 
 # The name, in one place, so a rename is a one-line change. BRAND_WORDS is the
 # wordmark split where the second word is drawn in the quieter colour.
-BRAND_NAME = "Blueprint Client"
-BRAND_WORDS = ("BLUEPRINT", "CLIENT")
-BRAND_LETTER = "B"
+BRAND_NAME = "Obsidian Client"
+BRAND_WORDS = ("OBSIDIAN", "CLIENT")
+BRAND_LETTER = "O"
 
 # Monochrome: near-black surfaces, graphite borders, and white standing in for
 # the accent colour. Green and red survive only where they carry meaning -
@@ -222,6 +222,16 @@ def blend(color_a, color_b, amount):
     return "#{:02x}{:02x}{:02x}".format(*mixed)
 
 
+def fit_text(value, font_obj, max_width):
+    """Trim text to fit max_width pixels, with an ellipsis. Canvas text never clips."""
+    value = str(value)
+    if font_obj.measure(value) <= max_width:
+        return value
+    while value and font_obj.measure(value + "...") > max_width:
+        value = value[:-1]
+    return value + "..."
+
+
 def rounded_rect(canvas, x0, y0, x1, y1, radius=12, **kwargs):
     """A rounded rectangle on a Canvas. ``radius`` is clamped to half the shape."""
     radius = max(0, min(radius, (x1 - x0) / 2, (y1 - y0) / 2))
@@ -240,6 +250,47 @@ def rounded_rect(canvas, x0, y0, x1, y1, radius=12, **kwargs):
         x0, y0,
     ]
     return canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
+
+
+# The four faces of the logo crystal, lit from the upper left: brightest face
+# first. tools/make_icon.py draws the app icon from the same geometry.
+GEM_SHADES = ("#ffffff", "#b9b9c2", "#85858f", "#45454d")
+
+
+def gem_points(cx, cy, size):
+    """Corners of the logo crystal: top, left, right, bottom and the girdle centre.
+
+    The girdle sits above the middle, so it reads as a cut stone pointing down
+    rather than a playing-card diamond.
+    """
+    half_w = size * 0.39
+    top, bottom = cy - size * 0.47, cy + size * 0.47
+    girdle = cy - size * 0.11
+    return {
+        "top": (cx, top), "bottom": (cx, bottom),
+        "left": (cx - half_w, girdle), "right": (cx + half_w, girdle),
+        "centre": (cx, girdle),
+    }
+
+
+def gem_faces(cx, cy, size):
+    """The crystal as four (points, colour) triangles, back to front."""
+    p = gem_points(cx, cy, size)
+    return [
+        ((p["top"], p["left"], p["centre"]), GEM_SHADES[0]),
+        ((p["top"], p["right"], p["centre"]), GEM_SHADES[1]),
+        ((p["left"], p["bottom"], p["centre"]), GEM_SHADES[2]),
+        ((p["right"], p["bottom"], p["centre"]), GEM_SHADES[3]),
+    ]
+
+
+def draw_gem(canvas, cx, cy, size, **kwargs):
+    """Draw the logo crystal on a canvas. Returns the four item ids."""
+    items = []
+    for points, colour in gem_faces(cx, cy, size):
+        flat = [value for point in points for value in point]
+        items.append(canvas.create_polygon(flat, fill=colour, outline=colour, **kwargs))
+    return items
 
 
 # ------------------------------------------------------------------- containers
