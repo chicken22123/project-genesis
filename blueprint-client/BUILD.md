@@ -4,23 +4,38 @@ Windows only. PyInstaller does not cross-compile, so a Windows executable has
 to be built on Windows. To run the launcher on Linux or ChromeOS instead, see
 [RUNNING-ON-LINUX.md](RUNNING-ON-LINUX.md) - no build step is needed there.
 
-## The short version
+## The short version: an installer
 
-Double-click `build.cmd`, or from a terminal in this folder:
+Double-click `build-installer.cmd`. It builds the app and wraps it in
 
-```cmd
-build.cmd
-```
+    dist\ObsidianClient-Setup-1.2.0.exe
 
-The result is `dist\Obsidian Client\Obsidian Client.exe`. Ship the whole
-`dist\Obsidian Client` folder (zip it) - the exe needs the `_internal`
-folder beside it.
+which installs Obsidian Client the way the Modrinth App installs: no admin
+prompt, a desktop shortcut, a Start menu entry, and an entry in
+**Settings > Apps** to uninstall it. Running a newer Setup over an old install
+upgrades it in place and keeps your settings.
 
-## A desktop shortcut for your own PC
+That one file is also what to send friends - no zip, nothing to extract. They
+double-click it, click through SmartScreen's *More info > Run anyway* (the
+app is not code-signed), and it is on their desktop.
 
-Double-click `make-shortcut.cmd`. It puts **Obsidian Client** on your desktop
-and in the Start menu with the crystal icon, and deletes any old Blueprint
-Client shortcuts it finds there.
+The installer is made with [Inno Setup 6](https://jrsoftware.org/isinfo.php),
+which is free. If it is missing, `build-installer.cmd` offers to install it
+with winget. The installer's settings are in `installer\obsidian-client.iss`.
+
+## Just the app, without an installer
+
+Double-click `build.cmd`. The result is
+`dist\Obsidian Client\Obsidian Client.exe`, which runs from that folder as it
+is. To share it this way, zip the whole `dist\Obsidian Client` folder - the
+exe needs the `_internal` folder beside it.
+
+## A shortcut to the code, for working on it
+
+If you are changing the code, `make-shortcut.cmd` is quicker than rebuilding
+the installer each time. It puts **Obsidian Client** on your desktop and in the
+Start menu with the crystal icon, and deletes any old Blueprint Client
+shortcuts it finds there.
 
 The shortcut runs `app.py` from this folder (through `pythonw`, so no console
 window), which means it always opens whatever you last `git pull`ed - no
