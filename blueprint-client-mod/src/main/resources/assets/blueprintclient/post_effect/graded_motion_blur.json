@@ -1,0 +1,120 @@
+{
+    "targets": {
+        "graded": {},
+        "swap": {},
+        "previous": {
+            "persistent": true
+        }
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "blueprintclient:post/color_grade",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                }
+            ],
+            "output": "graded",
+            "uniforms": {
+                "ColorGradeConfig": [
+                    {
+                        "name": "Exposure",
+                        "type": "float",
+                        "value": 1.03
+                    },
+                    {
+                        "name": "Contrast",
+                        "type": "float",
+                        "value": 1.12
+                    },
+                    {
+                        "name": "Saturation",
+                        "type": "float",
+                        "value": 1.18
+                    },
+                    {
+                        "name": "Vignette",
+                        "type": "float",
+                        "value": 0.45
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "blueprintclient:post/motion_blur",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "graded"
+                },
+                {
+                    "sampler_name": "Prev",
+                    "target": "previous"
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "MotionBlurConfig": [
+                    {
+                        "name": "Strength",
+                        "type": "float",
+                        "value": 0.5
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "output": "previous",
+            "uniforms": {
+                "BlitConfig": [
+                    {
+                        "name": "ColorModulate",
+                        "type": "vec4",
+                        "value": [
+                            1.0,
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "output": "minecraft:main",
+            "uniforms": {
+                "BlitConfig": [
+                    {
+                        "name": "ColorModulate",
+                        "type": "vec4",
+                        "value": [
+                            1.0,
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

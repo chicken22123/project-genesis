@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.blueprintclient.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ClientWorldPropertiesMixin",
+    "FogRendererMixin",
+    "GameRendererAccessor",
+    "LivingEntityMixin",
+    "SkyRenderingMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

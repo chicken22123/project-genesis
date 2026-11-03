@@ -27,9 +27,10 @@ import java.util.Map;
 /**
  * Every module Obsidian ships, and the registry the menu and the HUD read.
  *
- * <p>These are all client-side comfort features - brightness, zoom, readouts.
- * Nothing here tells the server anything it would not already hear from a
- * vanilla client.
+ * <p>These are all client-side comfort and look features - brightness, zoom,
+ * readouts, particles, sky. Nothing here tells the server anything it would
+ * not already hear from a vanilla client, and nothing reveals anything a
+ * vanilla client could not see.
  */
 public final class Modules {
 	private static final List<Module> ALL = new ArrayList<>();
@@ -50,6 +51,20 @@ public final class Modules {
 	public static final Module ZOOM = register(new Zoom());
 	public static final Module NO_BOBBING = register(new NoBobbing());
 	public static final Module CONFETTI = register(new Confetti());
+	public static final Module WIDE_FOV = register(new Cosmetics.WideFov());
+	public static final Module STATIC_FOV = register(new Cosmetics.StaticFov());
+	public static final Module MOTION_BLUR = register(new Cosmetics.MotionBlur());
+	public static final Module COLOR_GRADING = register(new Cosmetics.ColorGrading());
+	public static final Module OBSIDIAN_SKY = register(new Cosmetics.ObsidianSkyModule());
+	public static final Module ALWAYS_DAY = register(new Cosmetics.AlwaysDay());
+	public static final Module ALWAYS_NIGHT = register(new Cosmetics.AlwaysNight());
+	public static final Module LOW_HEALTH = register(new Cosmetics.LowHealthWarning());
+
+	public static final Module CUSTOM_CROSSHAIR = register(new Cosmetics.CustomCrosshair());
+	public static final Module HIT_PARTICLES = register(new Cosmetics.HitParticles());
+	public static final Module JUMP_CIRCLES = register(new Cosmetics.JumpCircles());
+	public static final Module SLOW_SWING = register(new Cosmetics.SlowSwing());
+	public static final Module OBSIDIAN_GLINT = register(new Cosmetics.ObsidianGlint());
 
 	public static final Module FPS = register(new FpsDisplay());
 	public static final Module COORDINATES = register(new Coordinates());
@@ -148,6 +163,7 @@ public final class Modules {
 				module.tick(client);
 			}
 		}
+		Cosmetics.PostEffects.update(client);
 	}
 
 	/** Run the enable hooks for modules restored from the config file. */

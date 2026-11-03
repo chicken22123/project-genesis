@@ -4,6 +4,7 @@ package com.blueprintclient.module;
 public enum Category {
 	PERFORMANCE("Performance"),
 	VISUAL("Visual"),
+	COSMETIC("Cosmetic"),
 	HUD("HUD"),
 	MOVEMENT("Movement"),
 	UTILITY("Utility");

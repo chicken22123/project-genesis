@@ -85,6 +85,13 @@ public abstract class Module {
 	public void tick(MinecraftClient client) {
 	}
 
+	/**
+	 * Draw across the whole screen - for effects that are not a movable HUD
+	 * element, like the low health warning. Called every frame while enabled.
+	 */
+	public void renderOverlay(DrawContext context, MinecraftClient client) {
+	}
+
 	/** A single line of text for the HUD, or null to draw nothing. */
 	public String hudLine(MinecraftClient client) {
 		return null;
