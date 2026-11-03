@@ -1,22 +1,23 @@
-"""Full-window loading screen shown while Blueprint Client starts the game.
+"""Full-window loading screen shown while the launcher starts the game.
 
 The screen is a canvas overlay that sits on top of the launcher window, so it
 does not need a second toplevel and never steals focus from the app.
+
+It redraws from scratch each frame, which is fine for the ~150 items it holds:
+a slowly drifting grid, a glow behind the wordmark, rising particles and the
+progress bar. Colours and fonts come from the shared theme.
 """
 
+import math
+import random
+import time
 import tkinter as tk
-from tkinter import font as tkfont
 
-BG = "#050d1a"
-GRID = "#0e2137"
-BLUE_BRIGHT = "#3d8bff"
-BLUE_LIGHT = "#8ecbff"
-BLUE_DEEP = "#1b3a63"
-TRACK = "#12263d"
-MUTED = "#6f90ad"
-TEXT = "#e8f4ff"
-ERROR = "#ff8080"
+import theme
 
+GRID_STEP = 46
+GRID_DRIFT = 9.0       # pixels per second the grid slides
+PARTICLE_COUNT = 40
 FRAME_MS = 33
 
 
@@ -32,9 +33,12 @@ class LoadingScreen:
         self.current = 0.0
         self.shimmer = 0.0
         self._job = None
-        self._fonts = {}
+        self._started = time.monotonic()
+        self._rng = random.Random()
+        self._particles = [self._spawn(anywhere=True) for _ in range(PARTICLE_COUNT)]
+        self._last = time.monotonic()
 
-        self.canvas = tk.Canvas(parent, bg=BG, highlightthickness=0, bd=0)
+        self.canvas = tk.Canvas(parent, bg=theme.BG_TOP, highlightthickness=0, bd=0)
         self.canvas.bind("<Configure>", lambda _event: self.redraw())
 
     # ------------------------------------------------------------------ api
@@ -99,6 +103,13 @@ class LoadingScreen:
             self.current += gap * 0.12
 
         self.shimmer = (self.shimmer + 0.012) % 1.0
+        now = time.monotonic()
+        dt = min(0.1, now - self._last)
+        self._last = now
+        for index, particle in enumerate(self._particles):
+            particle["y"] -= particle["speed"] * dt
+            if particle["y"] < -0.02:
+                self._particles[index] = self._spawn()
         self.redraw()
 
         still_moving = self.current != self.target
@@ -106,6 +117,18 @@ class LoadingScreen:
             self._job = self.canvas.after(FRAME_MS, self._tick)
 
     # -------------------------------------------------------------- drawing
+
+    def _spawn(self, anywhere=False):
+        rng = self._rng
+        return {
+            "x": rng.random(),
+            "y": rng.random() if anywhere else 1.0 + rng.random() * 0.1,
+            "speed": rng.uniform(0.02, 0.07),     # screen-heights per second
+            "size": rng.choice((1.0, 1.5, 1.5, 2.0, 2.5, 3.0)),
+            "glow": rng.uniform(0.2, 0.7),
+            "twinkle": rng.uniform(1.0, 3.0),
+            "phase": rng.uniform(0.0, math.tau),
+        }
 
     def redraw(self):
         canvas = self.canvas
@@ -116,137 +139,132 @@ class LoadingScreen:
         if width <= 1 or height <= 1:
             return
 
-        self._draw_grid(width, height)
+        t = time.monotonic() - self._started
+        self._draw_grid(width, height, t)
+        self._draw_glow(width, height)
+        self._draw_particles(width, height, t)
         self._draw_wordmark(width, height)
         self._draw_progress(width, height)
 
-    def _draw_grid(self, width, height):
-        """Faint blueprint grid, brightest in the middle of the screen."""
-        step = 46
-        for x in range(0, width, step):
-            self.canvas.create_line(x, 0, x, height, fill=GRID)
-        for y in range(0, height, step):
-            self.canvas.create_line(0, y, width, y, fill=GRID)
+    def _draw_grid(self, width, height, t):
+        """A faint grid sliding diagonally, brightest at the centre."""
+        c = self.canvas
+        offset = (t * GRID_DRIFT) % GRID_STEP
+        cx, cy = width / 2, height * 0.42
 
-        # A soft blue horizon band behind the wordmark.
-        band = int(height * 0.21)
-        centre = int(height * 0.42)
-        self.canvas.create_rectangle(
-            0, centre - band, width, centre + band, fill="#071427", outline=""
-        )
+        x = -GRID_STEP + offset
+        while x < width:
+            fade = max(0.0, 1.0 - abs(x - cx) / (width * 0.55))
+            c.create_line(x, 0, x, height,
+                          fill=theme.blend(theme.BG_TOP, theme.ACCENT_LIGHT, 0.07 * fade))
+            x += GRID_STEP
+        y = -GRID_STEP + offset
+        while y < height:
+            fade = max(0.0, 1.0 - abs(y - cy) / (height * 0.6))
+            c.create_line(0, y, width, y,
+                          fill=theme.blend(theme.BG_TOP, theme.ACCENT_LIGHT, 0.07 * fade))
+            y += GRID_STEP
 
-    def _bold_font(self, size):
-        """Fonts are cached: redraw runs ~30x a second while loading."""
-        if size not in self._fonts:
-            self._fonts[size] = tkfont.Font(family="Segoe UI", size=size, weight="bold")
-        return self._fonts[size]
+    def _draw_glow(self, width, height):
+        """A wide soft light behind the wordmark."""
+        cx, cy = width / 2, height * 0.42
+        rx_max, ry_max = width * 0.46, height * 0.30
+        steps = 22
+        for index in range(steps):
+            k = index / (steps - 1)
+            rx = rx_max * (1.0 - 0.85 * k)
+            ry = ry_max * (1.0 - 0.80 * k)
+            # Starting from almost nothing hides the outermost ellipse's edge.
+            self.canvas.create_oval(
+                cx - rx, cy - ry, cx + rx, cy + ry,
+                fill=theme.blend(theme.BG_TOP, theme.ACCENT, 0.003 + 0.077 * k * k),
+                outline="",
+            )
+
+    def _draw_particles(self, width, height, t):
+        for p in self._particles:
+            x, y = p["x"] * width, p["y"] * height
+            edge = max(0.0, min(1.0, p["y"] * 5, (1.0 - p["y"]) * 5))
+            shine = 0.55 + 0.45 * math.sin(t * p["twinkle"] + p["phase"])
+            r = p["size"]
+            self.canvas.create_oval(
+                x - r, y - r, x + r, y + r, outline="",
+                fill=theme.blend(theme.BG_TOP, theme.ACCENT, p["glow"] * shine * edge),
+            )
 
     def _draw_wordmark(self, width, height):
-        blueprint = "BLUEPRINT"
-        client = " CLIENT"
+        first, second = theme.BRAND_WORDS
+        second = " " + second
 
         # Shrink the wordmark until it clears the window edges.
         available = width * 0.82
         size = max(18, min(56, int(width / 15)))
         while size > 18:
-            bold = self._bold_font(size)
-            if bold.measure(blueprint + client) <= available:
+            if theme.font(size, "bold").measure(first + second) <= available:
                 break
             size -= 2
-        bold = self._bold_font(size)
+        bold = theme.font(size, "bold")
 
-        total = bold.measure(blueprint) + bold.measure(client)
+        total = bold.measure(first) + bold.measure(second)
         x = (width - total) / 2
         y = int(height * 0.42)
 
+        self.canvas.create_text(x, y, text=first, anchor="w", font=bold, fill=theme.ACCENT_HOVER)
         self.canvas.create_text(
-            x, y, text=blueprint, anchor="w", font=bold, fill=BLUE_BRIGHT
-        )
-        self.canvas.create_text(
-            x + bold.measure(blueprint),
-            y,
-            text=client,
-            anchor="w",
-            font=bold,
-            fill=BLUE_LIGHT,
+            x + bold.measure(first), y, text=second, anchor="w", font=bold, fill=theme.MUTED,
         )
 
+        # A rule that is brightest in the middle and fades to nothing.
         rule_half = min(total / 2, width * 0.32)
         rule_y = y + size + 14
-        self.canvas.create_line(
-            width / 2 - rule_half,
-            rule_y,
-            width / 2 + rule_half,
-            rule_y,
-            fill=BLUE_DEEP,
-            width=2,
-        )
+        for fraction, mix in ((1.0, 0.18), (0.6, 0.38), (0.25, 0.70)):
+            half = rule_half * fraction
+            self.canvas.create_line(
+                width / 2 - half, rule_y, width / 2 + half, rule_y,
+                fill=theme.blend(theme.BG_TOP, theme.ACCENT, mix), width=2,
+            )
 
         self.canvas.create_text(
-            width / 2,
-            rule_y + 22,
-            text="MINECRAFT 1.21.11",
-            font=("Segoe UI", 10, "bold"),
-            fill=MUTED,
+            width / 2, rule_y + 22, text="MINECRAFT 1.21.11",
+            font=theme.font(10, "bold"), fill=theme.MUTED,
         )
 
     def _draw_progress(self, width, height):
+        c = self.canvas
         bar_width = min(520, width * 0.62)
         x0 = (width - bar_width) / 2
         x1 = x0 + bar_width
         y = int(height * 0.74)
 
         percent = int(round(self.current))
-        self.canvas.create_text(
-            x0,
-            y - 20,
-            text=self.status,
-            anchor="w",
-            font=("Segoe UI", 10),
-            fill=ERROR if self.error else TEXT,
+        c.create_text(
+            x0, y - 20, text=self.status, anchor="w", font=theme.font(10),
+            fill=theme.ERROR if self.error else theme.TEXT,
         )
         if not self.error:
-            self.canvas.create_text(
-                x1,
-                y - 20,
-                text=f"{percent}%",
-                anchor="e",
-                font=("Segoe UI", 10, "bold"),
-                fill=BLUE_LIGHT,
+            c.create_text(
+                x1, y - 20, text=f"{percent}%", anchor="e",
+                font=theme.font(10, "bold"), fill=theme.ACCENT_HOVER,
             )
 
-        self.canvas.create_line(
-            x0, y, x1, y, fill=TRACK, width=8, capstyle=tk.ROUND
-        )
+        c.create_line(x0, y, x1, y, fill=theme.TRACK, width=6, capstyle=tk.ROUND)
 
         filled = bar_width * (self.current / 100.0)
         if filled > 1:
-            self.canvas.create_line(
-                x0,
-                y,
-                x0 + filled,
-                y,
-                fill=ERROR if self.error else BLUE_BRIGHT,
-                width=8,
-                capstyle=tk.ROUND,
-            )
+            fill = theme.ERROR if self.error else theme.ACCENT_LIGHT
+            # A wider, dimmer stroke under the fill reads as glow.
+            c.create_line(x0, y, x0 + filled, y, width=12, capstyle=tk.ROUND,
+                          fill=theme.blend(theme.BG_TOP, fill, 0.18))
+            c.create_line(x0, y, x0 + filled, y, fill=fill, width=6, capstyle=tk.ROUND)
 
-        # Shimmer travels along the unfilled part while work is in progress.
-        if not self.error and self.current < 100:
-            span = bar_width * 0.18
-            head = x0 + (bar_width + span) * self.shimmer - span
-            start = max(x0, head)
-            end = min(x1, head + span)
-            if end - start > 2:
-                self.canvas.create_line(
-                    start, y, end, y, fill=BLUE_DEEP, width=8, capstyle=tk.ROUND
-                )
+            # A bright glint runs along the filled part while work is going on.
+            if not self.error and self.current < 100:
+                span = max(18.0, min(80.0, filled * 0.3))
+                head = x0 - span + (filled + span) * self.shimmer
+                start, end = max(x0, head), min(x0 + filled, head + span)
+                if end - start > 2:
+                    c.create_line(start, y, end, y, fill=theme.ACCENT_HOVER,
+                                  width=6, capstyle=tk.ROUND)
 
         footer = "Returning to the launcher..." if self.error else "Getting things ready"
-        self.canvas.create_text(
-            width / 2,
-            y + 34,
-            text=footer,
-            font=("Segoe UI", 9),
-            fill=MUTED,
-        )
+        c.create_text(width / 2, y + 34, text=footer, font=theme.font(9), fill=theme.MUTED)

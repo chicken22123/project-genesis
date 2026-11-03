@@ -110,12 +110,13 @@ class Sidebar(tk.Frame):
         brand.pack(fill="x", padx=20, pady=(24, 0))
         row = theme.frame(brand, bg=theme.PANEL_BG)
         row.pack(fill="x")
-        theme.logo_badge(row, "B", size=38).pack(side="left")
+        theme.logo_badge(row, theme.BRAND_LETTER, size=38).pack(side="left")
         words = theme.frame(row, bg=theme.PANEL_BG)
         words.pack(side="left", padx=(10, 0))
         # Stacked, because the two words together are wider than the sidebar.
-        theme.label(words, "BLUEPRINT", size=13, weight="bold", fg=theme.ACCENT).pack(anchor="w")
-        theme.label(words, "CLIENT", size=13, weight="bold", fg=theme.ACCENT_LIGHT).pack(anchor="w")
+        first, second = theme.BRAND_WORDS
+        theme.label(words, first, size=13, weight="bold", fg=theme.ACCENT_HOVER).pack(anchor="w")
+        theme.label(words, second, size=13, weight="bold", fg=theme.MUTED).pack(anchor="w")
         theme.label(brand, "Desktop launcher", size=9, fg=theme.MUTED).pack(anchor="w", pady=(8, 0))
 
         card = theme.panel(self, bg=theme.PANEL_ALT)
@@ -160,7 +161,7 @@ class Sidebar(tk.Frame):
 class BlueprintApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Blueprint Client")
+        self.root.title(theme.BRAND_NAME)
         self.root.geometry("1020x680")
         self.root.minsize(900, 600)
         self.root.configure(bg=theme.BG_TOP)
@@ -223,7 +224,7 @@ class BlueprintApp:
         if self.config_store.error:
             self.play.append(self.config_store.error, "error")
 
-        self.play.append(f"Blueprint Client {APP_VERSION} ready.", "accent")
+        self.play.append(f"{theme.BRAND_NAME} {APP_VERSION} ready.", "accent")
         self.refresh_summary()
         self.root.after(80, self._pump_events)
 

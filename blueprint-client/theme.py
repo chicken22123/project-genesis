@@ -10,22 +10,35 @@ import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
 
-BG_TOP = "#050d1a"
-BG_BOTTOM = "#0d1f2b"
-PANEL_BG = "#0d1f2b"
-PANEL_ALT = "#0a1929"
-PANEL_BORDER = "#1b3a63"
-ACCENT = "#3d8bff"
-ACCENT_LIGHT = "#8ecbff"
-ACCENT_HOVER = "#5a9dff"
-TEXT = "#e8f4ff"
-MUTED = "#6f90ad"
-ERROR = "#ff8080"
-OK = "#7ce0a8"
-TRACK = "#12263d"
-DISABLED_FILL = "#1b3a63"
-STOP_RED = "#e05252"
-STOP_RED_HOVER = "#ef6a6a"
+# The name, in one place, so a rename is a one-line change. BRAND_WORDS is the
+# wordmark split where the second word is drawn in the quieter colour.
+BRAND_NAME = "Blueprint Client"
+BRAND_WORDS = ("BLUEPRINT", "CLIENT")
+BRAND_LETTER = "B"
+
+# Monochrome: near-black surfaces, graphite borders, and white standing in for
+# the accent colour. Green and red survive only where they carry meaning -
+# running, stopped, failed.
+BG_TOP = "#09090b"
+BG_BOTTOM = "#0f0f12"
+PANEL_BG = "#111114"
+PANEL_ALT = "#0c0c0e"
+PANEL_BORDER = "#25252b"
+ACCENT = "#e8e8ec"
+ACCENT_LIGHT = "#b9b9c2"
+ACCENT_HOVER = "#ffffff"
+TEXT = "#ececef"
+MUTED = "#74747d"
+ERROR = "#ff6b6b"
+OK = "#7ddf9f"
+TRACK = "#19191e"
+DISABLED_FILL = "#1d1d22"
+STOP_RED = "#e5484d"
+STOP_RED_HOVER = "#f06a6e"
+# A white selection bar would glare against black; rows and list items get a
+# lifted graphite instead.
+SELECT_BG = "#2b2b32"
+ZEBRA = "#0f0f12"
 
 FAMILY = "Segoe UI"
 MONO_FAMILY = "Consolas"
@@ -90,7 +103,7 @@ def apply_ttk_theme(root):
     )
     style.map(
         "Blueprint.Vertical.TScrollbar",
-        background=[("active", ACCENT), ("pressed", ACCENT)],
+        background=[("active", MUTED), ("pressed", ACCENT_LIGHT)],
         arrowcolor=[("active", TEXT)],
     )
 
@@ -118,8 +131,8 @@ def apply_ttk_theme(root):
     # be styled through the option database.
     root.option_add("*TCombobox*Listbox.background", PANEL_ALT)
     root.option_add("*TCombobox*Listbox.foreground", TEXT)
-    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
-    root.option_add("*TCombobox*Listbox.selectForeground", BG_TOP)
+    root.option_add("*TCombobox*Listbox.selectBackground", SELECT_BG)
+    root.option_add("*TCombobox*Listbox.selectForeground", TEXT)
 
     style.configure(
         "Blueprint.Treeview",
@@ -134,8 +147,8 @@ def apply_ttk_theme(root):
     )
     style.map(
         "Blueprint.Treeview",
-        background=[("selected", ACCENT)],
-        foreground=[("selected", BG_TOP)],
+        background=[("selected", SELECT_BG)],
+        foreground=[("selected", ACCENT_HOVER)],
     )
     style.layout(
         "Blueprint.Treeview",
@@ -182,7 +195,7 @@ def rows(parent, columns, height=10):
         widget.column(flexible[-1], stretch=True)
 
     widget.tag_configure("odd", background=PANEL_ALT)
-    widget.tag_configure("even", background="#0c1e30")
+    widget.tag_configure("even", background=ZEBRA)
     widget.tag_configure("muted", foreground=MUTED)
     widget.tag_configure("accent", foreground=ACCENT_LIGHT)
     widget.tag_configure("error", foreground=ERROR)
@@ -381,7 +394,7 @@ class NavButton(tk.Frame):
         if self.selected:
             c.create_rectangle(0, 6, 3, height - 6, fill=ACCENT, outline="")
 
-        fg = ACCENT_LIGHT if self.selected else (TEXT if self.hover else MUTED)
+        fg = ACCENT_HOVER if self.selected else (TEXT if self.hover else MUTED)
         c.create_text(
             22, height / 2, text=self._icon, anchor="w", font=font(12), fill=fg
         )
@@ -401,14 +414,14 @@ def set_nav_selected(widget, selected):
 def logo_badge(parent, letter="B", size=40):
     """The little rounded-square brand mark shown above the nav list."""
     canvas = tk.Canvas(parent, width=size, height=size, bg=PANEL_BG, highlightthickness=0, bd=0)
-    rounded_rect(canvas, 1, 1, size - 1, size - 1, radius=size * 0.28, fill=ACCENT, outline="")
+    rounded_rect(canvas, 1, 1, size - 1, size - 1, radius=size * 0.28, fill=ACCENT_HOVER, outline="")
     rounded_rect(
         canvas, 1, size * 0.52, size - 1, size - 1, radius=size * 0.28,
-        fill=ACCENT_HOVER, outline="",
+        fill=ACCENT_LIGHT, outline="",
     )
     # Redraw the top corners square so the second rect doesn't round the bottom
     # over the top piece's straight edge.
-    canvas.create_rectangle(1, size * 0.5, size - 1, size * 0.58, fill=ACCENT_HOVER, outline="")
+    canvas.create_rectangle(1, size * 0.5, size - 1, size * 0.58, fill=ACCENT_LIGHT, outline="")
     canvas.create_text(
         size / 2, size / 2 + 1, text=letter, font=font(int(size * 0.42), "bold"), fill=BG_TOP
     )
@@ -510,7 +523,7 @@ def text(parent, **kwargs):
         bg=PANEL_ALT,
         fg=MUTED,
         insertbackground=TEXT,
-        selectbackground=PANEL_BORDER,
+        selectbackground=SELECT_BG,
         selectforeground=TEXT,
         relief="flat",
         bd=0,
