@@ -16,6 +16,19 @@ The result is `dist\Obsidian Client\Obsidian Client.exe`. Ship the whole
 `dist\Obsidian Client` folder (zip it) - the exe needs the `_internal`
 folder beside it.
 
+## A desktop shortcut for your own PC
+
+Double-click `make-shortcut.cmd`. It puts **Obsidian Client** on your desktop
+and in the Start menu with the crystal icon, and deletes any old Blueprint
+Client shortcuts it finds there.
+
+The shortcut runs `app.py` from this folder (through `pythonw`, so no console
+window), which means it always opens whatever you last `git pull`ed - no
+rebuilding. To point it at the built exe instead, run
+`make-shortcut.cmd -UseExe` from a terminal.
+
+If you move this folder, run it again.
+
 ## Doing it by hand
 
 ```cmd
