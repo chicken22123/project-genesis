@@ -45,10 +45,13 @@ if errorlevel 1 goto :fail
 echo.
 echo Done. Your installer is:
 echo   "%~dp0dist\ObsidianClient-Setup-%VERSION%.exe"
-echo Double-click it to install Obsidian Client, or send that file to friends.
+echo Send that file to friends, or double-click it to install.
 echo.
-REM Pause so a double-clicked window stays open long enough to read this.
-pause
+REM Building the installer does not install anything, which is easy to miss -
+REM so offer to run it here and now.
+choice /C YN /M "Install Obsidian Client on this PC now"
+if errorlevel 2 exit /b 0
+start "" "%~dp0dist\ObsidianClient-Setup-%VERSION%.exe"
 exit /b 0
 
 :fail
